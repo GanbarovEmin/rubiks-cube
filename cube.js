@@ -40,10 +40,6 @@ const dragThreshold = 10;
 let moveQueue = [];
 let moveHistory = [];
 let moveCount = 0;
-const HINT_DISPLAY_DURATION = 3500;
-
-let hintOverlay = null;
-let hintTimeoutId = null;
 
 const tempQuaternion = new THREE.Quaternion();
 
@@ -111,7 +107,6 @@ function init() {
 
     updateStatus('Status: Ready');
     resetMoveCounter();
-    updateHintAvailability();
     requestAnimationFrame(animate);
 }
 
@@ -276,9 +271,7 @@ function projectVectorToScreen(vector) {
 
 function queueMove(axis, index, dir, speed, options = {}) {
     const { isSolving = false, countsTowardsMoveCount = false } = options;
-    clearHintOverlay();
     moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
-    updateHintAvailability();
     processQueue();
 }
 
@@ -454,102 +447,6 @@ function resetMoveCounter() {
 function incrementMoveCounter() {
     moveCount += 1;
     updateMoveCounter();
-}
-
-function recordMoveInHistory(move) {
-    const last = moveHistory[moveHistory.length - 1];
-    if (last && last.axis === move.axis && last.index === move.index && last.dir === move.dir * -1) {
-        moveHistory.pop();
-    } else {
-        moveHistory.push({ axis: move.axis, index: move.index, dir: move.dir });
-    }
-}
-
-function updateHintAvailability() {
-    const hintBtn = document.getElementById('btn-hint');
-    if (!hintBtn) return;
-    const shouldDisable = moveHistory.length === 0 || isAnimating || moveQueue.length > 0;
-    hintBtn.disabled = shouldDisable;
-}
-
-function showHintOverlay(axis, index) {
-    clearHintOverlay();
-    const span = (CUBE_SIZE + SPACING) * 3 - SPACING;
-    const geometry = new THREE.PlaneGeometry(span, span);
-    const material = new THREE.MeshBasicMaterial({
-        color: 0xf97316,
-        transparent: true,
-        opacity: 0.32,
-        depthWrite: false,
-        side: THREE.DoubleSide
-    });
-    const plane = new THREE.Mesh(geometry, material);
-    const outline = new THREE.LineSegments(
-        new THREE.EdgesGeometry(geometry),
-        new THREE.LineBasicMaterial({ color: 0xffb74d })
-    );
-    plane.add(outline);
-
-    const unit = CUBE_SIZE + SPACING;
-    const offset = index * unit;
-    if (axis === 'x') {
-        plane.rotation.y = Math.PI / 2;
-        plane.position.x = offset;
-    } else if (axis === 'y') {
-        plane.rotation.x = Math.PI / 2;
-        plane.position.y = offset;
-    } else {
-        plane.position.z = offset;
-    }
-
-    hintOverlay = plane;
-    scene.add(hintOverlay);
-    hintTimeoutId = setTimeout(() => {
-        clearHintOverlay();
-        updateStatus('Status: Ready');
-    }, HINT_DISPLAY_DURATION);
-}
-
-function clearHintOverlay() {
-    if (hintTimeoutId) {
-        clearTimeout(hintTimeoutId);
-        hintTimeoutId = null;
-    }
-    if (hintOverlay) {
-        scene.remove(hintOverlay);
-        disposeObject(hintOverlay);
-        hintOverlay = null;
-    }
-}
-
-function disposeObject(object) {
-    if (!object) return;
-    object.traverse(child => {
-        if (child.geometry) child.geometry.dispose();
-        if (Array.isArray(child.material)) {
-            child.material.forEach(mat => mat && mat.dispose && mat.dispose());
-        } else if (child.material && child.material.dispose) {
-            child.material.dispose();
-        }
-    });
-}
-
-function describeHintMove(move) {
-    const faceName = getFaceName(move.axis, move.index);
-    const noun = move.index === 0 ? 'slice' : 'face';
-    const arrow = move.dir > 0 ? '↻' : '↺';
-    const direction = move.dir > 0 ? 'clockwise' : 'counter-clockwise';
-    return `Turn the ${faceName} ${noun} ${arrow} (${direction})`;
-}
-
-function getFaceName(axis, index) {
-    const faceNames = {
-        x: { '1': 'Right', '0': 'Middle X', '-1': 'Left' },
-        y: { '1': 'Top', '0': 'Middle Y', '-1': 'Bottom' },
-        z: { '1': 'Front', '0': 'Middle Z', '-1': 'Back' }
-    };
-    const axisMap = faceNames[axis] || {};
-    return axisMap[String(index)] || 'Layer';
 }
 
 init();
