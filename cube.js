@@ -39,6 +39,7 @@ const dragThreshold = 10;
 
 let moveQueue = [];
 let moveHistory = [];
+let moveCount = 0;
 
 const tempQuaternion = new THREE.Quaternion();
 
@@ -102,6 +103,7 @@ function init() {
     window.addEventListener('touchcancel', onMouseUp);
 
     updateStatus('Status: Ready');
+    resetMoveCounter();
     requestAnimationFrame(animate);
 }
 
@@ -251,7 +253,7 @@ function handleCubeDrag(dx, dy) {
     rotDir *= screenDirection;
     if (rotAxisLabel === 'x') rotDir *= -1;
 
-    queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL);
+    queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
 }
 
 function projectVectorToScreen(vector) {
@@ -264,19 +266,24 @@ function projectVectorToScreen(vector) {
     return result.normalize();
 }
 
-function queueMove(axis, index, dir, speed, isSolving = false) {
-    moveQueue.push({ axis, index, dir, speed, isSolving });
+function queueMove(axis, index, dir, speed, options = {}) {
+    const { isSolving = false, countsTowardsMoveCount = false } = options;
+    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
     processQueue();
 }
 
 function processQueue() {
     if (isAnimating || moveQueue.length === 0) return;
     const move = moveQueue.shift();
-    if (!move.isSolving) moveHistory.push(move);
-    animateMove(move.axis, move.index, move.dir, move.speed || 300);
+    if (!move.isSolving) {
+        moveHistory.push({ axis: move.axis, index: move.index, dir: move.dir });
+    }
+    animateMove(move);
 }
 
-function animateMove(axis, index, dir, duration) {
+function animateMove(move) {
+    const { axis, index, dir, speed, countsTowardsMoveCount } = move;
+    const duration = speed || 300;
     isAnimating = true;
     updateStatus('Status: Moving…');
 
@@ -330,6 +337,9 @@ function animateMove(axis, index, dir, duration) {
                 cubie.updateMatrix();
             });
 
+            if (countsTowardsMoveCount) {
+                incrementMoveCounter();
+            }
             isAnimating = false;
             updateStatus('Status: Ready');
             processQueue();
@@ -341,6 +351,7 @@ function animateMove(axis, index, dir, duration) {
 
 function startShuffle() {
     if (isAnimating) return;
+    resetMoveCounter();
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
@@ -362,9 +373,10 @@ function startSolve() {
     moveQueue = [];
     const reversedHistory = [...moveHistory].reverse();
     reversedHistory.forEach(move => {
-        queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, true);
+        queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, { isSolving: true });
     });
     moveHistory = [];
+    resetMoveCounter();
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = true;
 }
@@ -386,12 +398,27 @@ function onKeyDown(event) {
     const move = KEY_MOVES[event.key.toLowerCase()];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
-    queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL);
+    queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
 }
 
 function updateStatus(text) {
     const status = document.getElementById('status');
     if (status) status.textContent = text;
+}
+
+function updateMoveCounter() {
+    const moveDisplay = document.getElementById('move-counter');
+    if (moveDisplay) moveDisplay.textContent = `Moves: ${moveCount}`;
+}
+
+function resetMoveCounter() {
+    moveCount = 0;
+    updateMoveCounter();
+}
+
+function incrementMoveCounter() {
+    moveCount += 1;
+    updateMoveCounter();
 }
 
 init();
