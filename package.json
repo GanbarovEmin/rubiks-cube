@@ -1,0 +1,16 @@
+{
+  "name": "rubiks-cube",
+  "version": "1.0.0",
+  "description": "A beautiful 3D Rubik's cube simulation with smooth animations, built with Three.js.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.js"
+  },
+  "keywords": [
+    "threejs",
+    "rubiks",
+    "webgl"
+  ],
+  "author": "",
+  "license": "MIT"
+}

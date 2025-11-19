@@ -1,33 +1,41 @@
 # 3D Rubik's Cube Simulation
 
-A beautiful 3D Rubik's cube simulation with smooth animations, built with Three.js.
+An elegant Rubik's cube playground that pairs a premium liquid-glass HUD with silky Three.js animations.
 
 ## Features
 
-- **3D Visualization**: Fully interactive 3D Rubik's cube rendered with Three.js
-- **Smooth Animations**: Cubic easing for fluid face rotations
-- **Shuffle Button**: Randomly shuffles the cube with 25 random moves
-- **Solve Button**: Reverses all shuffle moves to restore the cube to solved state
-- **Interactive Controls**: Drag to rotate the camera view around the cube
+- **Liquid Glass HUD** – pearlescent background, frosted-glass status chips, and premium buttons inspired by iOS.
+- **Move Counter** – glass indicator tracks every manual twist so you instantly see your solve progress.
+- **Hint Button (`Подсказка`)** – highlights the exact layer to turn, flashing an on-cube glow when you're stuck.
+- **Shuffle / Solve** – scramble with randomized moves and instantly unwind via reversible move history.
+- **Keyboard & Pointer Controls** – drag stickers, orbit the camera, or use `R L U D F B` (+ `Shift` for inverse).
 
 ## How to Use
 
-1. Open `index.html` in a modern web browser (Chrome, Firefox, Safari, or Edge)
-2. Use your mouse to drag and rotate the camera around the cube
-3. Click **Shuffle** to randomly scramble the cube
-4. Click **Solve** to animate the cube back to its solved state
+1. Open `index.html` in a modern WebGL-capable browser.
+2. Drag the background to orbit the camera or drag stickers to twist layers.
+3. Click **Shuffle** to randomize, **Solve** to undo the scramble, and **Подсказка** to glow the next recommended turn.
+4. Watch the status and move counter HUD elements update live inside the liquid-glass panels.
 
 ## Technical Details
 
-- Built with Three.js for 3D rendering
-- Uses OrbitControls for camera interaction
-- Implements proper 3x3x3 Rubik's cube mechanics
-- Tracks move history to enable solve functionality
-- Smooth animations with cubic easing functions
+- Three.js + OrbitControls handle rendering and navigation.
+- Balanced move history keeps the solve stack accurate and powers the hint suggestion.
+- Hint overlays use transient translucent planes that auto-dismiss after a short duration.
+- No bundler required: vanilla HTML + JS served statically.
+
+## Testing
+
+The repository uses Node's built-in test runner for lightweight smoke checks:
+
+```bash
+npm test
+```
+
+This validates the presence of the HUD scaffolding, hint workflow wiring, and README documentation, ensuring regressions are caught automatically.
 
 ## Browser Requirements
 
 - Modern browser with WebGL support
-- ES6 modules support
-- No build process required - runs directly in the browser
+- ES6 support (for template literals and modern syntax)
 
