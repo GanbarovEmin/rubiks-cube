@@ -89,6 +89,8 @@ function init() {
     window.addEventListener('keydown', onKeyDown);
     document.getElementById('btn-shuffle').addEventListener('click', startShuffle);
     document.getElementById('btn-solve').addEventListener('click', startSolve);
+    const hintButton = document.getElementById('btn-hint');
+    if (hintButton) hintButton.addEventListener('click', onHintRequest);
 
     const canvas = renderer.domElement;
     canvas.addEventListener('mousedown', onMouseDown);
@@ -276,8 +278,9 @@ function processQueue() {
     if (isAnimating || moveQueue.length === 0) return;
     const move = moveQueue.shift();
     if (!move.isSolving) {
-        moveHistory.push({ axis: move.axis, index: move.index, dir: move.dir });
+        recordMoveInHistory(move);
     }
+    updateHintAvailability();
     animateMove(move);
 }
 
@@ -286,6 +289,7 @@ function animateMove(move) {
     const duration = speed || 300;
     isAnimating = true;
     updateStatus('Status: Moving…');
+    updateHintAvailability();
 
     const activeCubies = [];
     const epsilon = 0.1;
@@ -342,6 +346,7 @@ function animateMove(move) {
             }
             isAnimating = false;
             updateStatus('Status: Ready');
+            updateHintAvailability();
             processQueue();
         }
     }
@@ -366,6 +371,7 @@ function startShuffle() {
 
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = false;
+    updateHintAvailability();
 }
 
 function startSolve() {
@@ -379,6 +385,8 @@ function startSolve() {
     resetMoveCounter();
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = true;
+    clearHintOverlay();
+    updateHintAvailability();
 }
 
 function onWindowResize() {
@@ -399,6 +407,25 @@ function onKeyDown(event) {
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
     queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+}
+
+function onHintRequest() {
+    if (isAnimating || moveQueue.length > 0) return;
+    if (moveHistory.length === 0) {
+        updateStatus('Hint: Куб уже собран — подсказка не требуется.');
+        clearHintOverlay();
+        return;
+    }
+
+    const lastMove = moveHistory[moveHistory.length - 1];
+    const suggestedMove = {
+        axis: lastMove.axis,
+        index: lastMove.index,
+        dir: lastMove.dir * -1
+    };
+
+    showHintOverlay(suggestedMove.axis, suggestedMove.index);
+    updateStatus(`Hint: ${describeHintMove(suggestedMove)}`);
 }
 
 function updateStatus(text) {
