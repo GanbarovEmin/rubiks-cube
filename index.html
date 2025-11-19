@@ -6,9 +6,14 @@
     <title>3D Rubik's Cube</title>
     <style>
         :root {
-            --glass-bg: rgba(0, 0, 0, 0.55);
-            --accent: #6366f1;
-            --accent-hover: #818cf8;
+            --glass-bg: rgba(255, 255, 255, 0.72);
+            --glass-border: rgba(255, 255, 255, 0.85);
+            --glass-shadow: 0 25px 65px rgba(15, 23, 42, 0.18);
+            --accent: #7c3aed;
+            --accent-hover: #a855f7;
+            --accent-secondary: #f97316;
+            --text-primary: #0f172a;
+            --text-muted: #475569;
         }
 
         * {
@@ -17,66 +22,115 @@
 
         body {
             margin: 0;
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background: radial-gradient(circle at top, #1f1c2c, #0f0c29 60%);
-            color: #fff;
+            font-family: "SF Pro Display", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(circle at 15% 20%, #ffffff 0%, #f5f1ff 42%, #e7f4ff 70%, #fff6ef 100%);
+            color: var(--text-primary);
             min-height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+
+        body::before,
+        body::after {
+            content: "";
+            position: fixed;
+            width: 360px;
+            height: 360px;
+            border-radius: 50%;
+            filter: blur(90px);
+            opacity: 0.45;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::before {
+            top: -120px;
+            left: -40px;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(255, 214, 255, 0.75) 40%, rgba(255, 184, 122, 0.6) 100%);
+        }
+
+        body::after {
+            bottom: -160px;
+            right: -60px;
+            background: radial-gradient(circle, rgba(126, 210, 255, 0.9) 0%, rgba(167, 154, 255, 0.7) 55%, rgba(255, 255, 255, 0.4) 100%);
         }
 
         #canvas-container {
             width: 100vw;
             height: 100vh;
             cursor: grab;
+            position: relative;
+            z-index: 1;
         }
 
         #canvas-container:active {
             cursor: grabbing;
         }
 
-        #status {
-            position: absolute;
-            top: 24px;
-            left: 24px;
-            padding: 10px 16px;
-            border-radius: 14px;
+        #status,
+        #move-counter,
+        #instructions,
+        #ui-container {
             background: var(--glass-bg);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            backdrop-filter: blur(28px) saturate(180%);
+            -webkit-backdrop-filter: blur(28px) saturate(180%);
+            box-shadow: var(--glass-shadow);
+            color: var(--text-primary);
+            z-index: 2;
+        }
+
+        #status,
+        #move-counter {
+            position: absolute;
+            left: 32px;
+            padding: 12px 22px;
             font-weight: 600;
-            letter-spacing: 0.5px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            font-size: 13px;
+        }
+
+        #status {
+            top: 32px;
+        }
+
+        #move-counter {
+            top: 96px;
         }
 
         #instructions {
             position: absolute;
-            top: 24px;
-            right: 24px;
-            padding: 16px 20px;
-            border-radius: 18px;
-            background: var(--glass-bg);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            top: 32px;
+            right: 32px;
+            padding: 20px 26px;
             font-size: 14px;
-            line-height: 1.6;
-            max-width: 240px;
+            line-height: 1.8;
+            max-width: 280px;
+            color: var(--text-muted);
         }
 
         #instructions strong {
-            font-size: 15px;
+            font-size: 13px;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.6px;
             display: block;
-            margin-bottom: 8px;
-            color: #c7d2fe;
+            margin-bottom: 10px;
+            color: var(--text-primary);
         }
 
         .pill {
             display: inline-block;
-            padding: 2px 8px;
+            padding: 4px 10px;
             border-radius: 999px;
-            background: rgba(255, 255, 255, 0.1);
-            font-size: 12px;
-            margin: 2px 4px 0 0;
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.85);
+            font-size: 11px;
+            margin: 4px 6px 0 0;
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            color: var(--accent);
+            font-weight: 600;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
         }
 
         #ui-container {
@@ -86,54 +140,62 @@
             transform: translateX(-50%);
             display: flex;
             gap: 18px;
-            padding: 18px 30px;
-            border-radius: 30px;
-            background: var(--glass-bg);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.55);
+            padding: 20px 36px;
+            border-radius: 999px;
+            align-items: center;
+            flex-wrap: wrap;
         }
 
         button {
-            padding: 12px 32px;
-            border-radius: 24px;
+            padding: 14px 34px;
+            border-radius: 999px;
             border: none;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
-            letter-spacing: 1px;
+            letter-spacing: 1.2px;
             text-transform: uppercase;
             color: #fff;
-            background: linear-gradient(135deg, var(--accent), #4f46e5);
-            box-shadow: 0 10px 20px rgba(79, 70, 229, 0.35);
+            background: linear-gradient(120deg, var(--accent), var(--accent-secondary));
+            box-shadow: 0 20px 35px rgba(124, 58, 237, 0.3);
             cursor: pointer;
-            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
         }
 
         button:hover:not(:disabled) {
-            transform: translateY(-2px);
-            background: linear-gradient(135deg, var(--accent-hover), var(--accent));
-            box-shadow: 0 14px 24px rgba(99, 102, 241, 0.45);
+            transform: translateY(-3px) scale(1.01);
+            box-shadow: 0 25px 45px rgba(124, 58, 237, 0.35);
+            filter: brightness(1.05);
+        }
+
+        button:focus-visible {
+            outline: 3px solid rgba(124, 58, 237, 0.35);
+            outline-offset: 3px;
         }
 
         button:disabled {
             cursor: not-allowed;
-            opacity: 0.55;
-            background: rgba(255, 255, 255, 0.15);
+            opacity: 0.45;
+            background: linear-gradient(120deg, rgba(148, 163, 184, 0.8), rgba(203, 213, 225, 0.7));
             box-shadow: none;
+            color: rgba(255, 255, 255, 0.8);
         }
     </style>
 </head>
 <body>
     <div id="status">Status: Ready</div>
+    <div id="move-counter">Moves: 0</div>
     <div id="instructions">
         <strong>Controls</strong>
         Drag stickers to turn faces.<br>
         Drag background to orbit camera.<br>
-        Keyboard: <span class="pill">R</span><span class="pill">L</span><span class="pill">U</span><span class="pill">D</span><span class="pill">F</span><span class="pill">B</span> (hold Shift for inverse).
+        Keyboard: <span class="pill">R</span><span class="pill">L</span><span class="pill">U</span><span class="pill">D</span><span class="pill">F</span><span class="pill">B</span> (hold Shift for inverse).<br>
+        Нажмите «Подсказка», чтобы подсветить следующий ход.
     </div>
 
     <div id="ui-container">
         <button id="btn-shuffle">Shuffle</button>
         <button id="btn-solve" disabled>Solve</button>
+        <button id="btn-hint" disabled>Подсказка</button>
     </div>
 
     <div id="canvas-container"></div>

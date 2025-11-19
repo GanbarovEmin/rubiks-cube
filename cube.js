@@ -39,6 +39,11 @@ const dragThreshold = 10;
 
 let moveQueue = [];
 let moveHistory = [];
+let moveCount = 0;
+const HINT_DISPLAY_DURATION = 3500;
+
+let hintOverlay = null;
+let hintTimeoutId = null;
 
 const tempQuaternion = new THREE.Quaternion();
 
@@ -46,15 +51,16 @@ function init() {
     const container = document.getElementById('canvas-container');
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111014);
+    scene.background = null;
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set(6, 5, 8);
     camera.lookAt(0, 0, 0);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setClearColor(0x000000, 0);
     container.appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -88,6 +94,8 @@ function init() {
     window.addEventListener('keydown', onKeyDown);
     document.getElementById('btn-shuffle').addEventListener('click', startShuffle);
     document.getElementById('btn-solve').addEventListener('click', startSolve);
+    const hintButton = document.getElementById('btn-hint');
+    if (hintButton) hintButton.addEventListener('click', onHintRequest);
 
     const canvas = renderer.domElement;
     canvas.addEventListener('mousedown', onMouseDown);
@@ -102,6 +110,8 @@ function init() {
     window.addEventListener('touchcancel', onMouseUp);
 
     updateStatus('Status: Ready');
+    resetMoveCounter();
+    updateHintAvailability();
     requestAnimationFrame(animate);
 }
 
@@ -251,7 +261,7 @@ function handleCubeDrag(dx, dy) {
     rotDir *= screenDirection;
     if (rotAxisLabel === 'x') rotDir *= -1;
 
-    queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL);
+    queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
 }
 
 function projectVectorToScreen(vector) {
@@ -264,21 +274,30 @@ function projectVectorToScreen(vector) {
     return result.normalize();
 }
 
-function queueMove(axis, index, dir, speed, isSolving = false) {
-    moveQueue.push({ axis, index, dir, speed, isSolving });
+function queueMove(axis, index, dir, speed, options = {}) {
+    const { isSolving = false, countsTowardsMoveCount = false } = options;
+    clearHintOverlay();
+    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
+    updateHintAvailability();
     processQueue();
 }
 
 function processQueue() {
     if (isAnimating || moveQueue.length === 0) return;
     const move = moveQueue.shift();
-    if (!move.isSolving) moveHistory.push(move);
-    animateMove(move.axis, move.index, move.dir, move.speed || 300);
+    if (!move.isSolving) {
+        recordMoveInHistory(move);
+    }
+    updateHintAvailability();
+    animateMove(move);
 }
 
-function animateMove(axis, index, dir, duration) {
+function animateMove(move) {
+    const { axis, index, dir, speed, countsTowardsMoveCount } = move;
+    const duration = speed || 300;
     isAnimating = true;
     updateStatus('Status: Moving…');
+    updateHintAvailability();
 
     const activeCubies = [];
     const epsilon = 0.1;
@@ -330,8 +349,12 @@ function animateMove(axis, index, dir, duration) {
                 cubie.updateMatrix();
             });
 
+            if (countsTowardsMoveCount) {
+                incrementMoveCounter();
+            }
             isAnimating = false;
             updateStatus('Status: Ready');
+            updateHintAvailability();
             processQueue();
         }
     }
@@ -341,6 +364,7 @@ function animateMove(axis, index, dir, duration) {
 
 function startShuffle() {
     if (isAnimating) return;
+    resetMoveCounter();
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
@@ -355,6 +379,7 @@ function startShuffle() {
 
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = false;
+    updateHintAvailability();
 }
 
 function startSolve() {
@@ -362,11 +387,14 @@ function startSolve() {
     moveQueue = [];
     const reversedHistory = [...moveHistory].reverse();
     reversedHistory.forEach(move => {
-        queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, true);
+        queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, { isSolving: true });
     });
     moveHistory = [];
+    resetMoveCounter();
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = true;
+    clearHintOverlay();
+    updateHintAvailability();
 }
 
 function onWindowResize() {
@@ -386,12 +414,142 @@ function onKeyDown(event) {
     const move = KEY_MOVES[event.key.toLowerCase()];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
-    queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL);
+    queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+}
+
+function onHintRequest() {
+    if (isAnimating || moveQueue.length > 0) return;
+    if (moveHistory.length === 0) {
+        updateStatus('Hint: Куб уже собран — подсказка не требуется.');
+        clearHintOverlay();
+        return;
+    }
+
+    const lastMove = moveHistory[moveHistory.length - 1];
+    const suggestedMove = {
+        axis: lastMove.axis,
+        index: lastMove.index,
+        dir: lastMove.dir * -1
+    };
+
+    showHintOverlay(suggestedMove.axis, suggestedMove.index);
+    updateStatus(`Hint: ${describeHintMove(suggestedMove)}`);
 }
 
 function updateStatus(text) {
     const status = document.getElementById('status');
     if (status) status.textContent = text;
+}
+
+function updateMoveCounter() {
+    const moveDisplay = document.getElementById('move-counter');
+    if (moveDisplay) moveDisplay.textContent = `Moves: ${moveCount}`;
+}
+
+function resetMoveCounter() {
+    moveCount = 0;
+    updateMoveCounter();
+}
+
+function incrementMoveCounter() {
+    moveCount += 1;
+    updateMoveCounter();
+}
+
+function recordMoveInHistory(move) {
+    const last = moveHistory[moveHistory.length - 1];
+    if (last && last.axis === move.axis && last.index === move.index && last.dir === move.dir * -1) {
+        moveHistory.pop();
+    } else {
+        moveHistory.push({ axis: move.axis, index: move.index, dir: move.dir });
+    }
+}
+
+function updateHintAvailability() {
+    const hintBtn = document.getElementById('btn-hint');
+    if (!hintBtn) return;
+    const shouldDisable = moveHistory.length === 0 || isAnimating || moveQueue.length > 0;
+    hintBtn.disabled = shouldDisable;
+}
+
+function showHintOverlay(axis, index) {
+    clearHintOverlay();
+    const span = (CUBE_SIZE + SPACING) * 3 - SPACING;
+    const geometry = new THREE.PlaneGeometry(span, span);
+    const material = new THREE.MeshBasicMaterial({
+        color: 0xf97316,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    const plane = new THREE.Mesh(geometry, material);
+    const outline = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geometry),
+        new THREE.LineBasicMaterial({ color: 0xffb74d })
+    );
+    plane.add(outline);
+
+    const unit = CUBE_SIZE + SPACING;
+    const offset = index * unit;
+    if (axis === 'x') {
+        plane.rotation.y = Math.PI / 2;
+        plane.position.x = offset;
+    } else if (axis === 'y') {
+        plane.rotation.x = Math.PI / 2;
+        plane.position.y = offset;
+    } else {
+        plane.position.z = offset;
+    }
+
+    hintOverlay = plane;
+    scene.add(hintOverlay);
+    hintTimeoutId = setTimeout(() => {
+        clearHintOverlay();
+        updateStatus('Status: Ready');
+    }, HINT_DISPLAY_DURATION);
+}
+
+function clearHintOverlay() {
+    if (hintTimeoutId) {
+        clearTimeout(hintTimeoutId);
+        hintTimeoutId = null;
+    }
+    if (hintOverlay) {
+        scene.remove(hintOverlay);
+        disposeObject(hintOverlay);
+        hintOverlay = null;
+    }
+}
+
+function disposeObject(object) {
+    if (!object) return;
+    object.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+            child.material.forEach(mat => mat && mat.dispose && mat.dispose());
+        } else if (child.material && child.material.dispose) {
+            child.material.dispose();
+        }
+    });
+}
+
+function describeHintMove(move) {
+    const faceName = getFaceName(move.axis, move.index);
+    const noun = move.index === 0 ? 'slice' : 'face';
+    const arrow = move.dir > 0 ? '↻' : '↺';
+    const direction = move.dir > 0 ? 'clockwise' : 'counter-clockwise';
+    return `Turn the ${faceName} ${noun} ${arrow} (${direction})`;
+}
+
+function getFaceName(axis, index) {
+    const faceNames = {
+        x: { '1': 'Right', '0': 'Middle X', '-1': 'Left' },
+        y: { '1': 'Top', '0': 'Middle Y', '-1': 'Bottom' },
+        z: { '1': 'Front', '0': 'Middle Z', '-1': 'Back' }
+    };
+    const axisMap = faceNames[axis] || {};
+    return axisMap[String(index)] || 'Layer';
 }
 
 init();
