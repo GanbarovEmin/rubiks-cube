@@ -394,7 +394,6 @@ function startSolve() {
         queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, { isSolving: true });
     });
     moveHistory = [];
-    resetMoveCounter();
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = true;
     clearHintOverlay();
