@@ -8,13 +8,14 @@ An elegant Rubik's cube playground that pairs a premium liquid-glass HUD with si
 - **Move Counter** – glass indicator tracks every manual twist so you instantly see your solve progress.
 - **Hint Button (`Подсказка`)** – highlights the exact layer to turn, flashing an on-cube glow when you're stuck.
 - **Shuffle / Solve** – scramble with randomized moves and instantly unwind via reversible move history.
+- **Reset Button** – instantly restore the cube to its solved, zeroed state for a fresh attempt.
 - **Keyboard & Pointer Controls** – drag stickers, orbit the camera, or use `R L U D F B` (+ `Shift` for inverse).
 
 ## How to Use
 
 1. Open `index.html` in a modern WebGL-capable browser.
 2. Drag the background to orbit the camera or drag stickers to twist layers.
-3. Click **Shuffle** to randomize, **Solve** to undo the scramble, and **Подсказка** to glow the next recommended turn.
+3. Click **Reset** for a clean slate, **Shuffle** to randomize, **Solve** to undo the scramble, and **Подсказка** to glow the next recommended turn.
 4. Watch the status and move counter HUD elements update live inside the liquid-glass panels.
 
 ## Technical Details
