@@ -30,6 +30,7 @@ let pivot;
 let raycaster, mouse;
 let allCubies = [];
 let isAnimating = false;
+let hintOverlay = null;
 
 let isDraggingCube = false;
 let startMousePos = { x: 0, y: 0 };
@@ -90,6 +91,8 @@ function init() {
     window.addEventListener('keydown', onKeyDown);
     document.getElementById('btn-shuffle').addEventListener('click', startShuffle);
     document.getElementById('btn-solve').addEventListener('click', startSolve);
+    const resetButton = document.getElementById('btn-reset');
+    if (resetButton) resetButton.addEventListener('click', resetCube);
     const hintButton = document.getElementById('btn-hint');
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
 
@@ -355,9 +358,17 @@ function animateMove(move) {
     requestAnimationFrame(loop);
 }
 
+function recordMoveInHistory(move) {
+    moveHistory.push({ axis: move.axis, index: move.index, dir: move.dir });
+    const solveBtn = document.getElementById('btn-solve');
+    if (solveBtn) solveBtn.disabled = moveHistory.length === 0;
+}
+
 function startShuffle() {
     if (isAnimating) return;
     resetMoveCounter();
+    moveHistory = [];
+    clearHintOverlay();
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
@@ -387,6 +398,21 @@ function startSolve() {
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = true;
     clearHintOverlay();
+    updateHintAvailability();
+}
+
+function resetCube() {
+    if (isAnimating) return;
+    moveQueue = [];
+    moveHistory = [];
+    clearHintOverlay();
+    allCubies.forEach(cubie => scene.remove(cubie));
+    allCubies = [];
+    createRubiksCube();
+    resetMoveCounter();
+    updateStatus('Status: Reset');
+    const solveBtn = document.getElementById('btn-solve');
+    if (solveBtn) solveBtn.disabled = true;
     updateHintAvailability();
 }
 
@@ -427,6 +453,54 @@ function onHintRequest() {
 
     showHintOverlay(suggestedMove.axis, suggestedMove.index);
     updateStatus(`Hint: ${describeHintMove(suggestedMove)}`);
+}
+
+function updateHintAvailability() {
+    const hintButton = document.getElementById('btn-hint');
+    if (hintButton) hintButton.disabled = moveHistory.length === 0 || isAnimating || moveQueue.length > 0;
+    const solveBtn = document.getElementById('btn-solve');
+    if (solveBtn) solveBtn.disabled = moveHistory.length === 0;
+}
+
+function showHintOverlay(axis, index) {
+    clearHintOverlay();
+    const size = (CUBE_SIZE + SPACING) * 3;
+    const geometry = new THREE.PlaneGeometry(size, size);
+    const material = new THREE.MeshBasicMaterial({
+        color: 0x7c3aed,
+        transparent: true,
+        opacity: 0.18,
+        side: THREE.DoubleSide
+    });
+    hintOverlay = new THREE.Mesh(geometry, material);
+    const layerPosition = index * (CUBE_SIZE + SPACING);
+
+    if (axis === 'x') {
+        hintOverlay.rotation.y = Math.PI / 2;
+        hintOverlay.position.x = layerPosition;
+    } else if (axis === 'y') {
+        hintOverlay.rotation.x = Math.PI / 2;
+        hintOverlay.position.y = layerPosition;
+    } else {
+        hintOverlay.position.z = layerPosition;
+    }
+
+    scene.add(hintOverlay);
+}
+
+function clearHintOverlay() {
+    if (hintOverlay) {
+        scene.remove(hintOverlay);
+        hintOverlay.geometry.dispose();
+        hintOverlay.material.dispose();
+        hintOverlay = null;
+    }
+}
+
+function describeHintMove(move) {
+    const axisLabels = { x: 'X', y: 'Y', z: 'Z' };
+    const dirLabel = move.dir === 1 ? 'clockwise' : 'counter-clockwise';
+    return `Rotate ${axisLabels[move.axis]} layer at index ${move.index} ${dirLabel}`;
 }
 
 function updateStatus(text) {
