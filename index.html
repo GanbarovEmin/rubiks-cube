@@ -186,6 +186,29 @@
             flex-wrap: wrap;
         }
 
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            color: var(--text-primary);
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+
+        select {
+            border-radius: 12px;
+            padding: 10px 14px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.92);
+            color: var(--text-primary);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 8px 20px rgba(15, 23, 42, 0.08);
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+        }
+
         button {
             padding: 14px 34px;
             border-radius: 999px;
@@ -234,6 +257,14 @@
     </div>
 
     <div id="ui-container">
+        <div class="control-group">
+            <label for="shuffle-difficulty">Shuffle Difficulty</label>
+            <select id="shuffle-difficulty">
+                <option value="easy">Easy</option>
+                <option value="medium" selected>Medium</option>
+                <option value="hard">Hard</option>
+            </select>
+        </div>
         <button id="btn-shuffle">Shuffle</button>
         <button id="btn-solve" disabled>Solve</button>
         <button id="btn-hint" disabled>Подсказка</button>

@@ -42,6 +42,7 @@ let moveHistory = [];
 let moveCount = 0;
 let hintOverlay = null;
 let hintTimeout = null;
+let shuffleDifficulty = 'medium';
 
 let isTimerRunning = false;
 let timerStartTime = 0;
@@ -99,6 +100,15 @@ function init() {
     document.getElementById('btn-solve').addEventListener('click', startSolve);
     const hintButton = document.getElementById('btn-hint');
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
+
+    const difficultySelect = document.getElementById('shuffle-difficulty');
+    if (difficultySelect) {
+        shuffleDifficulty = difficultySelect.value;
+        difficultySelect.addEventListener('change', event => {
+            shuffleDifficulty = event.target.value;
+            updateStatus(`Status: Difficulty set to ${formatDifficultyLabel(shuffleDifficulty)}`);
+        });
+    }
 
     const canvas = renderer.domElement;
     canvas.addEventListener('mousedown', onMouseDown);
@@ -379,10 +389,13 @@ function startShuffle() {
     if (isAnimating) return;
     resetMoveCounter();
     resetTimer();
+    moveHistory = [];
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
-    const moves = 20;
+    const moves = getShuffleMoveCount();
+
+    updateStatus(`Status: Shuffling (${formatDifficultyLabel(shuffleDifficulty)} • ${moves} moves)`);
 
     for (let i = 0; i < moves; i++) {
         const axis = axes[Math.floor(Math.random() * axes.length)];
@@ -394,6 +407,25 @@ function startShuffle() {
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = false;
     updateHintAvailability();
+}
+
+function getShuffleMoveCount() {
+    const ranges = {
+        easy: [10, 15],
+        medium: [20, 25],
+        hard: [40, 45]
+    };
+
+    const [min, max] = ranges[shuffleDifficulty] || ranges.medium;
+    return randomInt(min, max);
+}
+
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function formatDifficultyLabel(difficulty) {
+    return `${difficulty.charAt(0).toUpperCase()}${difficulty.slice(1).toLowerCase()}`;
 }
 
 function startSolve() {
