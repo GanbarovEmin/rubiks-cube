@@ -197,6 +197,13 @@
             font-size: 12px;
         }
 
+        .helper-text {
+            font-size: 11px;
+            letter-spacing: 0.3px;
+            color: var(--text-muted);
+            text-transform: none;
+        }
+
         select {
             border-radius: 12px;
             padding: 10px 14px;
@@ -264,6 +271,7 @@
                 <option value="medium" selected>Medium</option>
                 <option value="hard">Hard</option>
             </select>
+            <span class="helper-text" id="shuffle-range">20–25 moves</span>
         </div>
         <button id="btn-shuffle">Shuffle</button>
         <button id="btn-solve" disabled>Solve</button>

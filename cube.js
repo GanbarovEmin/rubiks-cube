@@ -5,6 +5,11 @@ const SPACING = 0.02;
 const ANIMATION_SPEED_SHUFFLE = 100;
 const ANIMATION_SPEED_SOLVE = 150;
 const ANIMATION_SPEED_MANUAL = 250;
+const SHUFFLE_RANGES = {
+    easy: [10, 15],
+    medium: [20, 25],
+    hard: [40, 45]
+};
 
 const COLORS = [
     0xb90000,
@@ -43,6 +48,8 @@ let moveCount = 0;
 let hintOverlay = null;
 let hintTimeout = null;
 let shuffleDifficulty = 'medium';
+let pendingShuffleMoves = 0;
+let lastShuffleCount = 0;
 
 let isTimerRunning = false;
 let timerStartTime = 0;
@@ -104,9 +111,11 @@ function init() {
     const difficultySelect = document.getElementById('shuffle-difficulty');
     if (difficultySelect) {
         shuffleDifficulty = difficultySelect.value;
+        updateShuffleRangeHelper(shuffleDifficulty);
         difficultySelect.addEventListener('change', event => {
             shuffleDifficulty = event.target.value;
             updateStatus(`Status: Difficulty set to ${formatDifficultyLabel(shuffleDifficulty)}`);
+            updateShuffleRangeHelper(shuffleDifficulty);
         });
     }
 
@@ -288,11 +297,11 @@ function projectVectorToScreen(vector) {
 }
 
 function queueMove(axis, index, dir, speed, options = {}) {
-    const { isSolving = false, countsTowardsMoveCount = false } = options;
+    const { isSolving = false, countsTowardsMoveCount = false, isShuffle = false } = options;
     if (countsTowardsMoveCount) {
         startTimerIfNeeded();
     }
-    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
+    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount, isShuffle });
     processQueue();
 }
 
@@ -315,7 +324,7 @@ function recordMoveInHistory(move) {
 }
 
 function animateMove(move) {
-    const { axis, index, dir, speed, countsTowardsMoveCount } = move;
+    const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
     const duration = speed || 300;
     isAnimating = true;
     updateStatus('Status: Moving…');
@@ -374,8 +383,19 @@ function animateMove(move) {
             if (countsTowardsMoveCount) {
                 incrementMoveCounter();
             }
+            if (isShuffle && pendingShuffleMoves > 0) {
+                pendingShuffleMoves -= 1;
+            }
             isAnimating = false;
-            updateStatus('Status: Ready');
+            if (isShuffle) {
+                if (pendingShuffleMoves === 0) {
+                    updateStatus(`Status: Shuffled (${formatDifficultyLabel(shuffleDifficulty)} • ${lastShuffleCount} moves)`);
+                } else {
+                    updateStatus(`Status: Shuffling (${pendingShuffleMoves} to go)`);
+                }
+            } else {
+                updateStatus('Status: Ready');
+            }
             updateHintAvailability();
             checkSolvedState();
             processQueue();
@@ -394,6 +414,8 @@ function startShuffle() {
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
     const moves = getShuffleMoveCount();
+    lastShuffleCount = moves;
+    pendingShuffleMoves = moves;
 
     updateStatus(`Status: Shuffling (${formatDifficultyLabel(shuffleDifficulty)} • ${moves} moves)`);
 
@@ -401,7 +423,7 @@ function startShuffle() {
         const axis = axes[Math.floor(Math.random() * axes.length)];
         const index = indices[Math.floor(Math.random() * indices.length)];
         const dir = dirs[Math.floor(Math.random() * dirs.length)];
-        queueMove(axis, index, dir, ANIMATION_SPEED_SHUFFLE);
+        queueMove(axis, index, dir, ANIMATION_SPEED_SHUFFLE, { isShuffle: true });
     }
 
     const solveBtn = document.getElementById('btn-solve');
@@ -410,13 +432,7 @@ function startShuffle() {
 }
 
 function getShuffleMoveCount() {
-    const ranges = {
-        easy: [10, 15],
-        medium: [20, 25],
-        hard: [40, 45]
-    };
-
-    const [min, max] = ranges[shuffleDifficulty] || ranges.medium;
+    const [min, max] = SHUFFLE_RANGES[shuffleDifficulty] || SHUFFLE_RANGES.medium;
     return randomInt(min, max);
 }
 
@@ -428,8 +444,15 @@ function formatDifficultyLabel(difficulty) {
     return `${difficulty.charAt(0).toUpperCase()}${difficulty.slice(1).toLowerCase()}`;
 }
 
+function updateShuffleRangeHelper(difficulty) {
+    const helper = document.getElementById('shuffle-range');
+    const [min, max] = SHUFFLE_RANGES[difficulty] || SHUFFLE_RANGES.medium;
+    if (helper) helper.textContent = `${min}–${max} moves`;
+}
+
 function startSolve() {
     if (moveHistory.length === 0) return;
+    pendingShuffleMoves = 0;
     moveQueue = [];
     const reversedHistory = [...moveHistory].reverse();
     reversedHistory.forEach(move => {
