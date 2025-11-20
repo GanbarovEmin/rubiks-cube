@@ -31,6 +31,7 @@ let raycaster, mouse;
 let allCubies = [];
 let isAnimating = false;
 let animationToken = 0;
+let isAutoSolving = false;
 
 let isDraggingCube = false;
 let startMousePos = { x: 0, y: 0 };
@@ -179,7 +180,7 @@ function getIntersects(event, element) {
 }
 
 function onMouseDown(event) {
-    if (isAnimating || moveQueue.length > 0) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
     const intersects = getIntersects(event, renderer.domElement);
     if (!intersects.length) return;
 
@@ -293,13 +294,25 @@ function queueMove(axis, index, dir, speed, options = {}) {
 }
 
 function processQueue() {
-    if (isAnimating || moveQueue.length === 0) return;
+    if (isAnimating) return;
+    if (moveQueue.length === 0) {
+        handleQueueIdle();
+        return;
+    }
     const move = moveQueue.shift();
     if (!move.isSolving) {
         recordMoveInHistory(move);
     }
     updateHintAvailability();
     animateMove(move);
+}
+
+function handleQueueIdle() {
+    if (isAutoSolving) {
+        isAutoSolving = false;
+        updateStatus('Status: Ready');
+    }
+    updateHintAvailability();
 }
 
 function recordMoveInHistory(move) {
@@ -393,6 +406,7 @@ function animateMove(move) {
 function resetCubeToSolved() {
     animationToken++;
     isAnimating = false;
+    isAutoSolving = false;
     moveQueue = [];
     moveHistory = [];
     clearHintOverlay();
@@ -438,7 +452,7 @@ function resetCubeToSolved() {
 }
 
 function startShuffle() {
-    if (isAnimating) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
     moveQueue = [];
     moveHistory = [];
     wasSolved = false;
@@ -464,17 +478,28 @@ function startShuffle() {
     updateHintAvailability();
 }
 
+function buildInverseSequence(history) {
+    return [...history]
+        .reverse()
+        .map(move => ({ axis: move.axis, index: move.index, dir: move.dir * -1 }));
+}
+
 function startSolve() {
-    if (moveHistory.length === 0) return;
+    if (isAnimating || moveQueue.length > 0 || moveHistory.length === 0 || isAutoSolving) return;
+
+    const inverseMoves = buildInverseSequence(moveHistory);
+    if (inverseMoves.length === 0) return;
+
+    isAutoSolving = true;
     moveQueue = [];
-    const reversedHistory = [...moveHistory].reverse();
-    reversedHistory.forEach(move => {
-        queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, { isSolving: true });
+    updateStatus('Status: Solving…');
+
+    inverseMoves.forEach(move => {
+        queueMove(move.axis, move.index, move.dir, ANIMATION_SPEED_SOLVE, { isSolving: true });
     });
+
     moveHistory = [];
     resetMoveCounter();
-    const solveBtn = document.getElementById('btn-solve');
-    if (solveBtn) solveBtn.disabled = true;
     clearHintOverlay();
     updateHintAvailability();
 }
@@ -499,7 +524,7 @@ function animate() {
 }
 
 function onKeyDown(event) {
-    if (isAnimating || moveQueue.length > 0) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
     const move = KEY_MOVES[event.key.toLowerCase()];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
@@ -622,7 +647,8 @@ function incrementMoveCounter() {
 function updateHintAvailability() {
     const hintBtn = document.getElementById('btn-hint');
     const solveBtn = document.getElementById('btn-solve');
-    const canInteract = !isAnimating && moveQueue.length === 0;
+    const shuffleBtn = document.getElementById('btn-shuffle');
+    const canInteract = !isAnimating && moveQueue.length === 0 && !isAutoSolving;
     const hasHistory = moveHistory.length > 0;
 
     if (hintBtn) {
@@ -631,6 +657,10 @@ function updateHintAvailability() {
 
     if (solveBtn) {
         solveBtn.disabled = !hasHistory || !canInteract;
+    }
+
+    if (shuffleBtn) {
+        shuffleBtn.disabled = !canInteract;
     }
 }
 
