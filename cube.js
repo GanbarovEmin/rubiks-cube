@@ -40,6 +40,8 @@ const dragThreshold = 10;
 let moveQueue = [];
 let moveHistory = [];
 let moveCount = 0;
+let hintOverlay = null;
+let hintTimeout = null;
 
 const tempQuaternion = new THREE.Quaternion();
 
@@ -285,6 +287,14 @@ function processQueue() {
     animateMove(move);
 }
 
+function recordMoveInHistory(move) {
+    const { axis, index, dir } = move;
+    moveHistory.push({ axis, index, dir });
+    if (moveHistory.length > 500) {
+        moveHistory.shift();
+    }
+}
+
 function animateMove(move) {
     const { axis, index, dir, speed, countsTowardsMoveCount } = move;
     const duration = speed || 300;
@@ -429,6 +439,19 @@ function onHintRequest() {
     updateStatus(`Hint: ${describeHintMove(suggestedMove)}`);
 }
 
+function describeHintMove({ axis, index, dir }) {
+    const axisNames = { x: 'X', y: 'Y', z: 'Z' };
+    const layerNames = {
+        x: { 1: 'Right', 0: 'Middle', [-1]: 'Left' },
+        y: { 1: 'Up', 0: 'Middle', [-1]: 'Down' },
+        z: { 1: 'Front', 0: 'Middle', [-1]: 'Back' }
+    };
+
+    const directionText = dir > 0 ? 'по часовой стрелке' : 'против часовой стрелки';
+    const layerLabel = layerNames[axis]?.[index] ?? 'Layer';
+    return `${layerLabel} (${axisNames[axis]}) — ${directionText}`;
+}
+
 function updateStatus(text) {
     const status = document.getElementById('status');
     if (status) status.textContent = text;
@@ -447,6 +470,68 @@ function resetMoveCounter() {
 function incrementMoveCounter() {
     moveCount += 1;
     updateMoveCounter();
+}
+
+function updateHintAvailability() {
+    const hintBtn = document.getElementById('btn-hint');
+    const solveBtn = document.getElementById('btn-solve');
+    const canInteract = !isAnimating && moveQueue.length === 0;
+    const hasHistory = moveHistory.length > 0;
+
+    if (hintBtn) {
+        hintBtn.disabled = !(canInteract && hasHistory);
+    }
+
+    if (solveBtn) {
+        solveBtn.disabled = !hasHistory || !canInteract;
+    }
+}
+
+function showHintOverlay(axis, index) {
+    clearHintOverlay();
+
+    const unit = CUBE_SIZE + SPACING;
+    const size = unit * 3;
+    const material = new THREE.MeshBasicMaterial({
+        color: 0xffa500,
+        transparent: true,
+        opacity: 0.25,
+        side: THREE.DoubleSide,
+        depthWrite: false
+    });
+
+    const geometry = new THREE.PlaneGeometry(size, size);
+    hintOverlay = new THREE.Mesh(geometry, material);
+
+    if (axis === 'x') {
+        hintOverlay.rotation.y = Math.PI / 2;
+        hintOverlay.position.set(index * unit, 0, 0);
+    } else if (axis === 'y') {
+        hintOverlay.rotation.x = -Math.PI / 2;
+        hintOverlay.position.set(0, index * unit, 0);
+    } else {
+        hintOverlay.position.set(0, 0, index * unit);
+    }
+
+    scene.add(hintOverlay);
+
+    hintTimeout = setTimeout(() => {
+        clearHintOverlay();
+    }, 1800);
+}
+
+function clearHintOverlay() {
+    if (hintTimeout) {
+        clearTimeout(hintTimeout);
+        hintTimeout = null;
+    }
+
+    if (hintOverlay) {
+        scene.remove(hintOverlay);
+        hintOverlay.geometry.dispose();
+        hintOverlay.material.dispose();
+        hintOverlay = null;
+    }
 }
 
 init();
