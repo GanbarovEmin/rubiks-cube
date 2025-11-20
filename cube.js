@@ -25,501 +25,525 @@ const KEY_MOVES = {
     b: { axis: 'z', index: -1, dir: -1 }
 };
 
-let scene, camera, renderer, controls;
-let pivot;
-let raycaster, mouse;
-let allCubies = [];
-let isAnimating = false;
-let hintOverlay = null;
-
-let isDraggingCube = false;
-let startMousePos = { x: 0, y: 0 };
-let intersectedCubie = null;
-let intersectedFaceNormal = null;
-const dragThreshold = 10;
-
-let moveQueue = [];
-let moveHistory = [];
 let moveCount = 0;
 
-const tempQuaternion = new THREE.Quaternion();
+class CubeApp {
+    constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.controls = null;
+        this.pivot = null;
+        this.raycaster = null;
+        this.mouse = null;
+        this.allCubies = [];
 
-function init() {
-    const container = document.getElementById('canvas-container');
+        this.isAnimating = false;
+        this.hintOverlay = null;
 
-    scene = new THREE.Scene();
-    scene.background = null;
+        this.isDraggingCube = false;
+        this.startMousePos = { x: 0, y: 0 };
+        this.intersectedCubie = null;
+        this.intersectedFaceNormal = null;
+        this.dragThreshold = 10;
 
-    camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(6, 5, 8);
-    camera.lookAt(0, 0, 0);
+        this.moveQueue = [];
+        this.moveHistory = [];
+        this.tempQuaternion = new THREE.Quaternion();
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.setClearColor(0x000000, 0);
-    container.appendChild(renderer.domElement);
+        this.statusEl = document.getElementById('status');
+        this.moveCounterEl = document.getElementById('move-counter');
+        this.solveBtn = document.getElementById('btn-solve');
+        this.shuffleBtn = document.getElementById('btn-shuffle');
+        this.resetBtn = document.getElementById('btn-reset');
+        this.hintBtn = document.getElementById('btn-hint');
 
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enablePan = false;
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.minDistance = 4;
-    controls.maxDistance = 20;
+        this.init();
+    }
 
-    raycaster = new THREE.Raycaster();
-    mouse = new THREE.Vector2();
+    init() {
+        this.createScene();
+        this.createLights();
+        this.createControls();
+        this.createRubiksCube();
+        this.registerEventListeners();
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
+        this.updateStatus('Status: Ready');
+        this.resetMoveCounter();
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(10, 20, 10);
-    scene.add(dirLight);
+        requestAnimationFrame(this.animate.bind(this));
+    }
 
-    const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
-    backLight.position.set(-10, -10, -10);
-    scene.add(backLight);
+    createScene() {
+        const container = document.getElementById('canvas-container');
 
-    pivot = new THREE.Object3D();
-    pivot.rotation.order = 'XYZ';
-    scene.add(pivot);
+        this.scene = new THREE.Scene();
+        this.scene.background = null;
 
-    createRubiksCube();
+        this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        this.camera.position.set(6, 5, 8);
+        this.camera.lookAt(0, 0, 0);
 
-    window.addEventListener('resize', onWindowResize);
-    window.addEventListener('keydown', onKeyDown);
-    document.getElementById('btn-shuffle').addEventListener('click', startShuffle);
-    document.getElementById('btn-solve').addEventListener('click', startSolve);
-    const resetButton = document.getElementById('btn-reset');
-    if (resetButton) resetButton.addEventListener('click', resetCube);
-    const hintButton = document.getElementById('btn-hint');
-    if (hintButton) hintButton.addEventListener('click', onHintRequest);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setClearColor(0x000000, 0);
+        container.appendChild(this.renderer.domElement);
 
-    const canvas = renderer.domElement;
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('mouseup', onMouseUp);
-    canvas.addEventListener('mouseleave', onMouseUp);
-    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-    canvas.addEventListener('touchend', onMouseUp);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('touchend', onMouseUp);
-    window.addEventListener('touchcancel', onMouseUp);
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
 
-    updateStatus('Status: Ready');
-    resetMoveCounter();
-    requestAnimationFrame(animate);
-}
+        this.pivot = new THREE.Object3D();
+        this.pivot.rotation.order = 'XYZ';
+        this.scene.add(this.pivot);
+    }
 
-function createRubiksCube() {
-    const geometry = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+    createLights() {
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(ambientLight);
 
-    for (let x = -1; x <= 1; x++) {
-        for (let y = -1; y <= 1; y++) {
-            for (let z = -1; z <= 1; z++) {
-                const materials = [];
-                materials.push(getFaceMaterial(x === 1 ? COLORS[0] : COLOR_BLACK));
-                materials.push(getFaceMaterial(x === -1 ? COLORS[1] : COLOR_BLACK));
-                materials.push(getFaceMaterial(y === 1 ? COLORS[2] : COLOR_BLACK));
-                materials.push(getFaceMaterial(y === -1 ? COLORS[3] : COLOR_BLACK));
-                materials.push(getFaceMaterial(z === 1 ? COLORS[4] : COLOR_BLACK));
-                materials.push(getFaceMaterial(z === -1 ? COLORS[5] : COLOR_BLACK));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        this.scene.add(dirLight);
 
-                const cubie = new THREE.Mesh(geometry, materials);
-                cubie.position.set(
-                    x * (CUBE_SIZE + SPACING),
-                    y * (CUBE_SIZE + SPACING),
-                    z * (CUBE_SIZE + SPACING)
-                );
-                cubie.userData = { isCubie: true };
+        const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        backLight.position.set(-10, -10, -10);
+        this.scene.add(backLight);
+    }
 
-                const edges = new THREE.EdgesGeometry(geometry);
-                const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
-                cubie.add(line);
+    createControls() {
+        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enablePan = false;
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+        this.controls.minDistance = 4;
+        this.controls.maxDistance = 20;
+    }
 
-                scene.add(cubie);
-                allCubies.push(cubie);
+    createRubiksCube() {
+        const geometry = new THREE.BoxGeometry(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE);
+
+        for (let x = -1; x <= 1; x++) {
+            for (let y = -1; y <= 1; y++) {
+                for (let z = -1; z <= 1; z++) {
+                    const materials = [];
+                    materials.push(this.getFaceMaterial(x === 1 ? COLORS[0] : COLOR_BLACK));
+                    materials.push(this.getFaceMaterial(x === -1 ? COLORS[1] : COLOR_BLACK));
+                    materials.push(this.getFaceMaterial(y === 1 ? COLORS[2] : COLOR_BLACK));
+                    materials.push(this.getFaceMaterial(y === -1 ? COLORS[3] : COLOR_BLACK));
+                    materials.push(this.getFaceMaterial(z === 1 ? COLORS[4] : COLOR_BLACK));
+                    materials.push(this.getFaceMaterial(z === -1 ? COLORS[5] : COLOR_BLACK));
+
+                    const cubie = new THREE.Mesh(geometry, materials);
+                    cubie.position.set(
+                        x * (CUBE_SIZE + SPACING),
+                        y * (CUBE_SIZE + SPACING),
+                        z * (CUBE_SIZE + SPACING)
+                    );
+                    cubie.userData = { isCubie: true };
+
+                    const edges = new THREE.EdgesGeometry(geometry);
+                    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000 }));
+                    cubie.add(line);
+
+                    this.scene.add(cubie);
+                    this.allCubies.push(cubie);
+                }
             }
         }
     }
-}
 
-function getFaceMaterial(color) {
-    return new THREE.MeshPhongMaterial({ color, shininess: 10, flatShading: true });
-}
-
-function getIntersects(event, element) {
-    const rect = element.getBoundingClientRect();
-    let clientX = event.clientX;
-    let clientY = event.clientY;
-
-    if (event.changedTouches && event.changedTouches.length) {
-        clientX = event.changedTouches[0].clientX;
-        clientY = event.changedTouches[0].clientY;
+    getFaceMaterial(color) {
+        return new THREE.MeshPhongMaterial({ color, shininess: 10, flatShading: true });
     }
 
-    mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    registerEventListeners() {
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+        window.addEventListener('keydown', this.onKeyDown.bind(this));
 
-    raycaster.setFromCamera(mouse, camera);
-    return raycaster.intersectObjects(allCubies);
-}
+        this.shuffleBtn?.addEventListener('click', this.startShuffle.bind(this));
+        this.solveBtn?.addEventListener('click', this.startSolve.bind(this));
+        this.resetBtn?.addEventListener('click', this.resetCube.bind(this));
+        this.hintBtn?.addEventListener('click', this.onHintRequest.bind(this));
 
-function onMouseDown(event) {
-    if (isAnimating || moveQueue.length > 0) return;
-    const intersects = getIntersects(event, renderer.domElement);
-    if (!intersects.length) return;
+        const canvas = this.renderer.domElement;
+        canvas.addEventListener('mousedown', this.onPointerDown.bind(this));
+        canvas.addEventListener('mousemove', this.onPointerMove.bind(this));
+        canvas.addEventListener('mouseup', this.onPointerUp.bind(this));
+        canvas.addEventListener('mouseleave', this.onPointerUp.bind(this));
+        canvas.addEventListener('touchstart', this.onPointerDown.bind(this), { passive: false });
+        canvas.addEventListener('touchmove', this.onPointerMove.bind(this), { passive: false });
+        canvas.addEventListener('touchend', this.onPointerUp.bind(this));
 
-    controls.enabled = false;
-    isDraggingCube = true;
-    intersectedCubie = intersects[0].object;
-    intersectedCubie.getWorldQuaternion(tempQuaternion);
-    intersectedFaceNormal = intersects[0].face.normal.clone().applyQuaternion(tempQuaternion).round();
-
-    const clientX = event.clientX ?? (event.touches && event.touches[0].clientX);
-    const clientY = event.clientY ?? (event.touches && event.touches[0].clientY);
-    startMousePos = { x: clientX, y: clientY };
-}
-
-function onTouchStart(event) {
-    event.preventDefault();
-    onMouseDown(event);
-}
-
-function onMouseMove(event) {
-    if (!isDraggingCube || !intersectedCubie) return;
-
-    const clientX = event.clientX ?? (event.touches && event.touches[0].clientX);
-    const clientY = event.clientY ?? (event.touches && event.touches[0].clientY);
-
-    const dx = clientX - startMousePos.x;
-    const dy = clientY - startMousePos.y;
-
-    if (Math.sqrt(dx * dx + dy * dy) > dragThreshold) {
-        handleCubeDrag(dx, dy);
-        resetDragState();
+        window.addEventListener('mouseup', this.onPointerUp.bind(this));
+        window.addEventListener('touchend', this.onPointerUp.bind(this));
+        window.addEventListener('touchcancel', this.onPointerUp.bind(this));
     }
-}
 
-function onTouchMove(event) {
-    if (isDraggingCube) event.preventDefault();
-    onMouseMove(event);
-}
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
 
-function onMouseUp() {
-    resetDragState();
-}
+    onPointerDown(event) {
+        if (this.isAnimating || this.moveQueue.length > 0) return;
+        const intersects = this.getIntersects(event, this.renderer.domElement);
+        if (!intersects.length) return;
 
-function resetDragState() {
-    isDraggingCube = false;
-    intersectedCubie = null;
-    intersectedFaceNormal = null;
-    controls.enabled = true;
-}
+        this.controls.enabled = false;
+        this.isDraggingCube = true;
+        this.intersectedCubie = intersects[0].object;
+        this.intersectedCubie.getWorldQuaternion(this.tempQuaternion);
+        this.intersectedFaceNormal = intersects[0].face.normal.clone().applyQuaternion(this.tempQuaternion).round();
 
-function handleCubeDrag(dx, dy) {
-    if (!intersectedFaceNormal || !intersectedCubie) return;
+        const { clientX, clientY } = this.getEventPosition(event);
+        this.startMousePos = { x: clientX, y: clientY };
+    }
 
-    const moveVector = new THREE.Vector2(dx, -dy).normalize();
-    const axes = [
-        new THREE.Vector3(1, 0, 0),
-        new THREE.Vector3(0, 1, 0),
-        new THREE.Vector3(0, 0, 1)
-    ];
+    onPointerMove(event) {
+        if (!this.isDraggingCube || !this.intersectedCubie) return;
+        if (this.isTouchEvent(event)) event.preventDefault();
 
-    let bestAxis = null;
-    let maxDot = 0;
-    let screenDirection = 1;
+        const { clientX, clientY } = this.getEventPosition(event);
+        const dx = clientX - this.startMousePos.x;
+        const dy = clientY - this.startMousePos.y;
 
-    axes.forEach(axis => {
-        if (Math.abs(axis.dot(intersectedFaceNormal)) > 0.9) return;
-        const axis2D = projectVectorToScreen(axis);
-        const dot = axis2D.dot(moveVector);
-        if (Math.abs(dot) > maxDot) {
-            maxDot = Math.abs(dot);
-            bestAxis = axis;
-            screenDirection = dot > 0 ? 1 : -1;
+        if (Math.sqrt(dx * dx + dy * dy) > this.dragThreshold) {
+            this.handleCubeDrag(dx, dy);
+            this.resetDragState();
         }
-    });
-
-    if (!bestAxis) return;
-
-    const rotationVector = new THREE.Vector3().crossVectors(intersectedFaceNormal, bestAxis);
-    let rotAxisLabel = '';
-    if (Math.abs(rotationVector.x) > 0.9) rotAxisLabel = 'x';
-    else if (Math.abs(rotationVector.y) > 0.9) rotAxisLabel = 'y';
-    else rotAxisLabel = 'z';
-
-    const unit = CUBE_SIZE + SPACING;
-    const localPos = intersectedCubie.position.clone().divideScalar(unit).round();
-
-    let rotDir = rotationVector[rotAxisLabel] > 0 ? 1 : -1;
-    rotDir *= screenDirection;
-    if (rotAxisLabel === 'x') rotDir *= -1;
-
-    queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
-}
-
-function projectVectorToScreen(vector) {
-    const center = new THREE.Vector3(0, 0, 0);
-    const tip = vector.clone();
-    center.project(camera);
-    tip.project(camera);
-    const result = new THREE.Vector2(tip.x - center.x, tip.y - center.y);
-    if (result.lengthSq() === 0) return result;
-    return result.normalize();
-}
-
-function queueMove(axis, index, dir, speed, options = {}) {
-    const { isSolving = false, countsTowardsMoveCount = false } = options;
-    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
-    processQueue();
-}
-
-function processQueue() {
-    if (isAnimating || moveQueue.length === 0) return;
-    const move = moveQueue.shift();
-    if (!move.isSolving) {
-        recordMoveInHistory(move);
     }
-    updateHintAvailability();
-    animateMove(move);
-}
 
-function animateMove(move) {
-    const { axis, index, dir, speed, countsTowardsMoveCount } = move;
-    const duration = speed || 300;
-    isAnimating = true;
-    updateStatus('Status: Moving…');
-    updateHintAvailability();
+    onPointerUp() {
+        this.resetDragState();
+    }
 
-    const activeCubies = [];
-    const epsilon = 0.1;
-    allCubies.forEach(cubie => {
-        const pos = new THREE.Vector3();
-        cubie.getWorldPosition(pos);
-        const localPos = pos.divideScalar(CUBE_SIZE + SPACING);
-        if (Math.abs(localPos[axis] - index) < epsilon) activeCubies.push(cubie);
-    });
+    resetDragState() {
+        this.isDraggingCube = false;
+        this.intersectedCubie = null;
+        this.intersectedFaceNormal = null;
+        this.controls.enabled = true;
+    }
 
-    pivot.rotation.set(0, 0, 0);
-    pivot.updateMatrixWorld();
-    activeCubies.forEach(cubie => pivot.attach(cubie));
+    getEventPosition(event) {
+        if (event.changedTouches && event.changedTouches.length) {
+            return { clientX: event.changedTouches[0].clientX, clientY: event.changedTouches[0].clientY };
+        }
+        return { clientX: event.clientX, clientY: event.clientY };
+    }
 
-    const targetRotation = (Math.PI / 2) * dir * -1;
-    const startTime = performance.now();
+    isTouchEvent(event) {
+        return event.changedTouches && event.changedTouches.length;
+    }
 
-    function loop(currentTime) {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const ease = progress < 0.5
-            ? 2 * progress * progress
-            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    getIntersects(event, element) {
+        const rect = element.getBoundingClientRect();
+        const { clientX, clientY } = this.getEventPosition(event);
 
-        pivot.rotation[axis] = targetRotation * ease;
+        this.mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
 
-        if (progress < 1) {
-            requestAnimationFrame(loop);
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        return this.raycaster.intersectObjects(this.allCubies);
+    }
+
+    handleCubeDrag(dx, dy) {
+        if (!this.intersectedFaceNormal || !this.intersectedCubie) return;
+
+        const moveVector = new THREE.Vector2(dx, -dy).normalize();
+        const axes = [
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(0, 0, 1)
+        ];
+
+        let bestAxis = null;
+        let maxDot = 0;
+        let screenDirection = 1;
+
+        axes.forEach(axis => {
+            if (Math.abs(axis.dot(this.intersectedFaceNormal)) > 0.9) return;
+            const axis2D = this.projectVectorToScreen(axis);
+            const dot = axis2D.dot(moveVector);
+            if (Math.abs(dot) > maxDot) {
+                maxDot = Math.abs(dot);
+                bestAxis = axis;
+                screenDirection = dot > 0 ? 1 : -1;
+            }
+        });
+
+        if (!bestAxis) return;
+
+        const rotationVector = new THREE.Vector3().crossVectors(this.intersectedFaceNormal, bestAxis);
+        let rotAxisLabel = '';
+        if (Math.abs(rotationVector.x) > 0.9) rotAxisLabel = 'x';
+        else if (Math.abs(rotationVector.y) > 0.9) rotAxisLabel = 'y';
+        else rotAxisLabel = 'z';
+
+        const unit = CUBE_SIZE + SPACING;
+        const localPos = this.intersectedCubie.position.clone().divideScalar(unit).round();
+
+        let rotDir = rotationVector[rotAxisLabel] > 0 ? 1 : -1;
+        rotDir *= screenDirection;
+        if (rotAxisLabel === 'x') rotDir *= -1;
+
+        this.queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    }
+
+    projectVectorToScreen(vector) {
+        const center = new THREE.Vector3(0, 0, 0);
+        const tip = vector.clone();
+        center.project(this.camera);
+        tip.project(this.camera);
+        const result = new THREE.Vector2(tip.x - center.x, tip.y - center.y);
+        if (result.lengthSq() === 0) return result;
+        return result.normalize();
+    }
+
+    queueMove(axis, index, dir, speed, options = {}) {
+        const { isSolving = false, countsTowardsMoveCount = false } = options;
+        this.moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
+        this.processQueue();
+    }
+
+    processQueue() {
+        if (this.isAnimating || this.moveQueue.length === 0) return;
+        const move = this.moveQueue.shift();
+        if (!move.isSolving) {
+            this.recordMoveInHistory(move);
+        }
+        this.updateHintAvailability();
+        this.animateMove(move);
+    }
+
+    animateMove(move) {
+        const { axis, index, dir, speed, countsTowardsMoveCount } = move;
+        const duration = speed || 300;
+        this.isAnimating = true;
+        this.updateStatus('Status: Moving…');
+        this.updateHintAvailability();
+
+        const activeCubies = [];
+        const epsilon = 0.1;
+        this.allCubies.forEach(cubie => {
+            const pos = new THREE.Vector3();
+            cubie.getWorldPosition(pos);
+            const localPos = pos.divideScalar(CUBE_SIZE + SPACING);
+            if (Math.abs(localPos[axis] - index) < epsilon) activeCubies.push(cubie);
+        });
+
+        this.pivot.rotation.set(0, 0, 0);
+        this.pivot.updateMatrixWorld();
+        activeCubies.forEach(cubie => this.pivot.attach(cubie));
+
+        const targetRotation = (Math.PI / 2) * dir * -1;
+        const startTime = performance.now();
+
+        const loop = (currentTime) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = progress < 0.5
+                ? 2 * progress * progress
+                : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+            this.pivot.rotation[axis] = targetRotation * ease;
+
+            if (progress < 1) {
+                requestAnimationFrame(loop);
+            } else {
+                this.pivot.rotation[axis] = targetRotation;
+                this.pivot.updateMatrixWorld();
+
+                activeCubies.forEach(cubie => {
+                    this.scene.attach(cubie);
+                    const pos = cubie.position;
+                    const unit = CUBE_SIZE + SPACING;
+                    cubie.position.set(
+                        Math.round(pos.x / unit) * unit,
+                        Math.round(pos.y / unit) * unit,
+                        Math.round(pos.z / unit) * unit
+                    );
+
+                    const euler = new THREE.Euler().setFromQuaternion(cubie.quaternion);
+                    cubie.rotation.set(
+                        Math.round(euler.x / (Math.PI / 2)) * (Math.PI / 2),
+                        Math.round(euler.y / (Math.PI / 2)) * (Math.PI / 2),
+                        Math.round(euler.z / (Math.PI / 2)) * (Math.PI / 2)
+                    );
+                    cubie.updateMatrix();
+                });
+
+                if (countsTowardsMoveCount) {
+                    this.incrementMoveCounter();
+                }
+                this.isAnimating = false;
+                this.updateStatus('Status: Ready');
+                this.updateHintAvailability();
+                this.processQueue();
+            }
+        };
+
+        requestAnimationFrame(loop);
+    }
+
+    recordMoveInHistory(move) {
+        this.moveHistory.push({ axis: move.axis, index: move.index, dir: move.dir });
+        if (this.solveBtn) this.solveBtn.disabled = this.moveHistory.length === 0;
+    }
+
+    startShuffle() {
+        if (this.isAnimating) return;
+        this.resetMoveCounter();
+        this.moveHistory = [];
+        this.clearHintOverlay();
+        const axes = ['x', 'y', 'z'];
+        const indices = [-1, 0, 1];
+        const dirs = [1, -1];
+        const moves = 20;
+
+        for (let i = 0; i < moves; i++) {
+            const axis = axes[Math.floor(Math.random() * axes.length)];
+            const index = indices[Math.floor(Math.random() * indices.length)];
+            const dir = dirs[Math.floor(Math.random() * dirs.length)];
+            this.queueMove(axis, index, dir, ANIMATION_SPEED_SHUFFLE);
+        }
+
+        if (this.solveBtn) this.solveBtn.disabled = false;
+        this.updateHintAvailability();
+    }
+
+    startSolve() {
+        if (this.moveHistory.length === 0) return;
+        this.moveQueue = [];
+        const reversedHistory = [...this.moveHistory].reverse();
+        reversedHistory.forEach(move => {
+            this.queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, { isSolving: true });
+        });
+        this.moveHistory = [];
+        if (this.solveBtn) this.solveBtn.disabled = true;
+        this.clearHintOverlay();
+        this.updateHintAvailability();
+    }
+
+    resetCube() {
+        if (this.isAnimating) return;
+        this.moveQueue = [];
+        this.moveHistory = [];
+        this.clearHintOverlay();
+        this.allCubies.forEach(cubie => this.scene.remove(cubie));
+        this.allCubies = [];
+        this.createRubiksCube();
+        this.resetMoveCounter();
+        this.updateStatus('Status: Reset');
+        if (this.solveBtn) this.solveBtn.disabled = true;
+        this.updateHintAvailability();
+    }
+
+    onKeyDown(event) {
+        if (this.isAnimating || this.moveQueue.length > 0) return;
+        const move = KEY_MOVES[event.key.toLowerCase()];
+        if (!move) return;
+        const dir = event.shiftKey ? -move.dir : move.dir;
+        this.queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    }
+
+    onHintRequest() {
+        if (this.isAnimating || this.moveQueue.length > 0) return;
+        if (this.moveHistory.length === 0) {
+            this.updateStatus('Hint: Куб уже собран — подсказка не требуется.');
+            this.clearHintOverlay();
+            return;
+        }
+
+        const lastMove = this.moveHistory[this.moveHistory.length - 1];
+        const suggestedMove = {
+            axis: lastMove.axis,
+            index: lastMove.index,
+            dir: lastMove.dir * -1
+        };
+
+        this.showHintOverlay(suggestedMove.axis, suggestedMove.index);
+        this.updateStatus(`Hint: ${this.describeHintMove(suggestedMove)}`);
+    }
+
+    updateHintAvailability() {
+        if (this.hintBtn) this.hintBtn.disabled = this.moveHistory.length === 0 || this.isAnimating || this.moveQueue.length > 0;
+        if (this.solveBtn) this.solveBtn.disabled = this.moveHistory.length === 0;
+    }
+
+    showHintOverlay(axis, index) {
+        this.clearHintOverlay();
+        const size = (CUBE_SIZE + SPACING) * 3;
+        const geometry = new THREE.PlaneGeometry(size, size);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x7c3aed,
+            transparent: true,
+            opacity: 0.18,
+            side: THREE.DoubleSide
+        });
+        this.hintOverlay = new THREE.Mesh(geometry, material);
+        const layerPosition = index * (CUBE_SIZE + SPACING);
+
+        if (axis === 'x') {
+            this.hintOverlay.rotation.y = Math.PI / 2;
+            this.hintOverlay.position.x = layerPosition;
+        } else if (axis === 'y') {
+            this.hintOverlay.rotation.x = Math.PI / 2;
+            this.hintOverlay.position.y = layerPosition;
         } else {
-            pivot.rotation[axis] = targetRotation;
-            pivot.updateMatrixWorld();
+            this.hintOverlay.position.z = layerPosition;
+        }
 
-            activeCubies.forEach(cubie => {
-                scene.attach(cubie);
-                const pos = cubie.position;
-                const unit = CUBE_SIZE + SPACING;
-                cubie.position.set(
-                    Math.round(pos.x / unit) * unit,
-                    Math.round(pos.y / unit) * unit,
-                    Math.round(pos.z / unit) * unit
-                );
+        this.scene.add(this.hintOverlay);
+    }
 
-                const euler = new THREE.Euler().setFromQuaternion(cubie.quaternion);
-                cubie.rotation.set(
-                    Math.round(euler.x / (Math.PI / 2)) * (Math.PI / 2),
-                    Math.round(euler.y / (Math.PI / 2)) * (Math.PI / 2),
-                    Math.round(euler.z / (Math.PI / 2)) * (Math.PI / 2)
-                );
-                cubie.updateMatrix();
-            });
-
-            if (countsTowardsMoveCount) {
-                incrementMoveCounter();
-            }
-            isAnimating = false;
-            updateStatus('Status: Ready');
-            updateHintAvailability();
-            processQueue();
+    clearHintOverlay() {
+        if (this.hintOverlay) {
+            this.scene.remove(this.hintOverlay);
+            this.hintOverlay.geometry.dispose();
+            this.hintOverlay.material.dispose();
+            this.hintOverlay = null;
         }
     }
 
-    requestAnimationFrame(loop);
-}
-
-function recordMoveInHistory(move) {
-    moveHistory.push({ axis: move.axis, index: move.index, dir: move.dir });
-    const solveBtn = document.getElementById('btn-solve');
-    if (solveBtn) solveBtn.disabled = moveHistory.length === 0;
-}
-
-function startShuffle() {
-    if (isAnimating) return;
-    resetMoveCounter();
-    moveHistory = [];
-    clearHintOverlay();
-    const axes = ['x', 'y', 'z'];
-    const indices = [-1, 0, 1];
-    const dirs = [1, -1];
-    const moves = 20;
-
-    for (let i = 0; i < moves; i++) {
-        const axis = axes[Math.floor(Math.random() * axes.length)];
-        const index = indices[Math.floor(Math.random() * indices.length)];
-        const dir = dirs[Math.floor(Math.random() * dirs.length)];
-        queueMove(axis, index, dir, ANIMATION_SPEED_SHUFFLE);
+    describeHintMove(move) {
+        const axisLabels = { x: 'X', y: 'Y', z: 'Z' };
+        const dirLabel = move.dir === 1 ? 'clockwise' : 'counter-clockwise';
+        return `Rotate ${axisLabels[move.axis]} layer at index ${move.index} ${dirLabel}`;
     }
 
-    const solveBtn = document.getElementById('btn-solve');
-    if (solveBtn) solveBtn.disabled = false;
-    updateHintAvailability();
-}
-
-function startSolve() {
-    if (moveHistory.length === 0) return;
-    moveQueue = [];
-    const reversedHistory = [...moveHistory].reverse();
-    reversedHistory.forEach(move => {
-        queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, { isSolving: true });
-    });
-    moveHistory = [];
-    const solveBtn = document.getElementById('btn-solve');
-    if (solveBtn) solveBtn.disabled = true;
-    clearHintOverlay();
-    updateHintAvailability();
-}
-
-function resetCube() {
-    if (isAnimating) return;
-    moveQueue = [];
-    moveHistory = [];
-    clearHintOverlay();
-    allCubies.forEach(cubie => scene.remove(cubie));
-    allCubies = [];
-    createRubiksCube();
-    resetMoveCounter();
-    updateStatus('Status: Reset');
-    const solveBtn = document.getElementById('btn-solve');
-    if (solveBtn) solveBtn.disabled = true;
-    updateHintAvailability();
-}
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-}
-
-function onKeyDown(event) {
-    if (isAnimating || moveQueue.length > 0) return;
-    const move = KEY_MOVES[event.key.toLowerCase()];
-    if (!move) return;
-    const dir = event.shiftKey ? -move.dir : move.dir;
-    queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
-}
-
-function onHintRequest() {
-    if (isAnimating || moveQueue.length > 0) return;
-    if (moveHistory.length === 0) {
-        updateStatus('Hint: Куб уже собран — подсказка не требуется.');
-        clearHintOverlay();
-        return;
+    updateStatus(text) {
+        if (this.statusEl) this.statusEl.textContent = text;
     }
 
-    const lastMove = moveHistory[moveHistory.length - 1];
-    const suggestedMove = {
-        axis: lastMove.axis,
-        index: lastMove.index,
-        dir: lastMove.dir * -1
-    };
+    updateMoveCounter() {
+        if (this.moveCounterEl) this.moveCounterEl.textContent = `Moves: ${moveCount}`;
+    }
 
-    showHintOverlay(suggestedMove.axis, suggestedMove.index);
-    updateStatus(`Hint: ${describeHintMove(suggestedMove)}`);
+    resetMoveCounter() {
+        moveCount = 0;
+        this.updateMoveCounter();
+    }
+
+    incrementMoveCounter() {
+        moveCount += 1;
+        this.updateMoveCounter();
+    }
+
+    animate() {
+        requestAnimationFrame(this.animate.bind(this));
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+    }
 }
+
+const app = new CubeApp();
 
 function updateHintAvailability() {
-    const hintButton = document.getElementById('btn-hint');
-    if (hintButton) hintButton.disabled = moveHistory.length === 0 || isAnimating || moveQueue.length > 0;
-    const solveBtn = document.getElementById('btn-solve');
-    if (solveBtn) solveBtn.disabled = moveHistory.length === 0;
+    app.updateHintAvailability();
 }
 
 function showHintOverlay(axis, index) {
-    clearHintOverlay();
-    const size = (CUBE_SIZE + SPACING) * 3;
-    const geometry = new THREE.PlaneGeometry(size, size);
-    const material = new THREE.MeshBasicMaterial({
-        color: 0x7c3aed,
-        transparent: true,
-        opacity: 0.18,
-        side: THREE.DoubleSide
-    });
-    hintOverlay = new THREE.Mesh(geometry, material);
-    const layerPosition = index * (CUBE_SIZE + SPACING);
-
-    if (axis === 'x') {
-        hintOverlay.rotation.y = Math.PI / 2;
-        hintOverlay.position.x = layerPosition;
-    } else if (axis === 'y') {
-        hintOverlay.rotation.x = Math.PI / 2;
-        hintOverlay.position.y = layerPosition;
-    } else {
-        hintOverlay.position.z = layerPosition;
-    }
-
-    scene.add(hintOverlay);
+    app.showHintOverlay(axis, index);
 }
-
-function clearHintOverlay() {
-    if (hintOverlay) {
-        scene.remove(hintOverlay);
-        hintOverlay.geometry.dispose();
-        hintOverlay.material.dispose();
-        hintOverlay = null;
-    }
-}
-
-function describeHintMove(move) {
-    const axisLabels = { x: 'X', y: 'Y', z: 'Z' };
-    const dirLabel = move.dir === 1 ? 'clockwise' : 'counter-clockwise';
-    return `Rotate ${axisLabels[move.axis]} layer at index ${move.index} ${dirLabel}`;
-}
-
-function updateStatus(text) {
-    const status = document.getElementById('status');
-    if (status) status.textContent = text;
-}
-
-function updateMoveCounter() {
-    const moveDisplay = document.getElementById('move-counter');
-    if (moveDisplay) moveDisplay.textContent = `Moves: ${moveCount}`;
-}
-
-function resetMoveCounter() {
-    moveCount = 0;
-    updateMoveCounter();
-}
-
-function incrementMoveCounter() {
-    moveCount += 1;
-    updateMoveCounter();
-}
-
-init();
