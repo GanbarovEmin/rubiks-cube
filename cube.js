@@ -47,6 +47,7 @@ let isTimerRunning = false;
 let timerStartTime = 0;
 let timerElapsed = 0;
 let awaitingFirstMove = true;
+let wasSolved = false;
 
 const tempQuaternion = new THREE.Quaternion();
 
@@ -99,6 +100,8 @@ function init() {
     document.getElementById('btn-solve').addEventListener('click', startSolve);
     const hintButton = document.getElementById('btn-hint');
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
+    const playAgainButton = document.getElementById('btn-play-again');
+    if (playAgainButton) playAgainButton.addEventListener('click', onPlayAgain);
 
     const canvas = renderer.domElement;
     canvas.addEventListener('mousedown', onMouseDown);
@@ -377,8 +380,14 @@ function animateMove(move) {
 
 function startShuffle() {
     if (isAnimating) return;
+    moveQueue = [];
+    moveHistory = [];
+    wasSolved = false;
+    hideVictoryUI();
+    clearHintOverlay();
     resetMoveCounter();
     resetTimer();
+    updateStatus('Status: Shuffling…');
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
@@ -409,6 +418,12 @@ function startSolve() {
     if (solveBtn) solveBtn.disabled = true;
     clearHintOverlay();
     updateHintAvailability();
+}
+
+function onPlayAgain() {
+    hideVictoryUI();
+    wasSolved = false;
+    startShuffle();
 }
 
 function onWindowResize() {
@@ -479,6 +494,21 @@ function formatTime(ms) {
         .toString()
         .padStart(2, '0');
     return `${minutes}:${seconds}.${hundredths}`;
+}
+
+function showVictoryUI(finalTimeMs, finalMoves) {
+    const overlay = document.getElementById('victory-overlay');
+    const timeDisplay = document.getElementById('victory-time');
+    const moveDisplay = document.getElementById('victory-moves');
+
+    if (timeDisplay) timeDisplay.textContent = formatTime(finalTimeMs);
+    if (moveDisplay) moveDisplay.textContent = finalMoves;
+    if (overlay) overlay.classList.remove('hidden');
+}
+
+function hideVictoryUI() {
+    const overlay = document.getElementById('victory-overlay');
+    if (overlay) overlay.classList.add('hidden');
 }
 
 function updateTimerDisplay(ms) {
@@ -664,11 +694,18 @@ function isCubeSolved() {
 }
 
 function checkSolvedState() {
-    if (isCubeSolved()) {
-        updateStatus('Status: Solved!');
+    const solvedNow = isCubeSolved();
+
+    if (!wasSolved && solvedNow) {
         stopTimer();
         awaitingFirstMove = false;
+        updateStatus('Status: Solved!');
+        showVictoryUI(timerElapsed, moveCount);
+    } else if (wasSolved && !solvedNow) {
+        hideVictoryUI();
     }
+
+    wasSolved = solvedNow;
 }
 
 init();
