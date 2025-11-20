@@ -605,12 +605,6 @@ function dominantAxis(normal) {
     return { axis: dominant, sign: Math.sign(normal[dominant]) };
 }
 
-function expectedColorForOrientation(axis, sign) {
-    if (axis === 'x') return sign > 0 ? COLORS[0] : COLORS[1];
-    if (axis === 'y') return sign > 0 ? COLORS[2] : COLORS[3];
-    return sign > 0 ? COLORS[4] : COLORS[5];
-}
-
 function isCubeSolved() {
     const faceNormals = [
         new THREE.Vector3(1, 0, 0),
@@ -621,7 +615,18 @@ function isCubeSolved() {
         new THREE.Vector3(0, 0, -1)
     ];
 
-    return allCubies.every(cubie => {
+    const unit = CUBE_SIZE + SPACING;
+    const epsilon = 0.1;
+    const faces = [
+        { axis: 'x', sign: 1 },
+        { axis: 'x', sign: -1 },
+        { axis: 'y', sign: 1 },
+        { axis: 'y', sign: -1 },
+        { axis: 'z', sign: 1 },
+        { axis: 'z', sign: -1 }
+    ];
+
+    function getStickerColorForFace(cubie, targetAxis, targetSign) {
         const quaternion = cubie.getWorldQuaternion(new THREE.Quaternion());
         const materials = Array.isArray(cubie.material) ? cubie.material : [cubie.material];
 
@@ -631,11 +636,30 @@ function isCubeSolved() {
 
             const worldNormal = faceNormals[i].clone().applyQuaternion(quaternion);
             const { axis, sign } = dominantAxis(worldNormal);
-            const expectedColor = expectedColorForOrientation(axis, sign);
-            if (material.color.getHex() !== expectedColor) return false;
+            if (axis === targetAxis && sign === targetSign) {
+                return material.color.getHex();
+            }
         }
 
-        return true;
+        return null;
+    }
+
+    return faces.every(face => {
+        const faceColors = [];
+        const target = face.sign * unit;
+
+        allCubies.forEach(cubie => {
+            const position = cubie.getWorldPosition(new THREE.Vector3());
+            if (Math.abs(position[face.axis] - target) < epsilon) {
+                const color = getStickerColorForFace(cubie, face.axis, face.sign);
+                if (color !== null) faceColors.push(color);
+            }
+        });
+
+        if (faceColors.length !== 9) return false;
+        const reference = faceColors[0];
+        if (reference === COLOR_BLACK) return false;
+        return faceColors.every(color => color === reference);
     });
 }
 
