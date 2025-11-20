@@ -82,7 +82,8 @@
         }
 
         #status,
-        #move-counter {
+        #move-counter,
+        #timer {
             position: absolute;
             left: 32px;
             padding: 12px 22px;
@@ -98,6 +99,10 @@
 
         #move-counter {
             top: 96px;
+        }
+
+        #timer {
+            top: 160px;
         }
 
         #move-counter {
@@ -219,6 +224,7 @@
 <body>
     <div id="status">Status: Ready</div>
     <div id="move-counter">Moves: 0</div>
+    <div id="timer">Time: 00:00</div>
     <div id="instructions">
         <strong>Controls</strong>
         Drag stickers to turn faces.<br>

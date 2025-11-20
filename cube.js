@@ -43,6 +43,11 @@ let moveCount = 0;
 let hintOverlay = null;
 let hintTimeout = null;
 
+let isTimerRunning = false;
+let timerStartTime = 0;
+let timerElapsed = 0;
+let awaitingFirstMove = true;
+
 const tempQuaternion = new THREE.Quaternion();
 
 function init() {
@@ -109,6 +114,7 @@ function init() {
 
     updateStatus('Status: Ready');
     resetMoveCounter();
+    resetTimer();
     requestAnimationFrame(animate);
 }
 
@@ -273,6 +279,9 @@ function projectVectorToScreen(vector) {
 
 function queueMove(axis, index, dir, speed, options = {}) {
     const { isSolving = false, countsTowardsMoveCount = false } = options;
+    if (countsTowardsMoveCount) {
+        startTimerIfNeeded();
+    }
     moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
     processQueue();
 }
@@ -358,6 +367,7 @@ function animateMove(move) {
             isAnimating = false;
             updateStatus('Status: Ready');
             updateHintAvailability();
+            checkSolvedState();
             processQueue();
         }
     }
@@ -368,6 +378,7 @@ function animateMove(move) {
 function startShuffle() {
     if (isAnimating) return;
     resetMoveCounter();
+    resetTimer();
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
@@ -409,6 +420,7 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
+    tickTimer();
     renderer.render(scene, camera);
 }
 
@@ -455,6 +467,52 @@ function describeHintMove({ axis, index, dir }) {
 function updateStatus(text) {
     const status = document.getElementById('status');
     if (status) status.textContent = text;
+}
+
+function formatTime(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60)
+        .toString()
+        .padStart(2, '0');
+    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+    const hundredths = Math.floor((ms % 1000) / 10)
+        .toString()
+        .padStart(2, '0');
+    return `${minutes}:${seconds}.${hundredths}`;
+}
+
+function updateTimerDisplay(ms) {
+    const timer = document.getElementById('timer');
+    if (timer) timer.textContent = `Time: ${formatTime(ms)}`;
+}
+
+function resetTimer() {
+    isTimerRunning = false;
+    timerElapsed = 0;
+    timerStartTime = 0;
+    awaitingFirstMove = true;
+    updateTimerDisplay(0);
+}
+
+function startTimerIfNeeded() {
+    if (!awaitingFirstMove || isTimerRunning) return;
+    timerStartTime = performance.now();
+    isTimerRunning = true;
+    awaitingFirstMove = false;
+}
+
+function stopTimer() {
+    if (!isTimerRunning) return;
+    timerElapsed = performance.now() - timerStartTime;
+    isTimerRunning = false;
+    updateTimerDisplay(timerElapsed);
+}
+
+function tickTimer() {
+    if (isTimerRunning) {
+        const current = performance.now();
+        updateTimerDisplay(current - timerStartTime);
+    }
 }
 
 function updateMoveCounter() {
@@ -531,6 +589,61 @@ function clearHintOverlay() {
         hintOverlay.geometry.dispose();
         hintOverlay.material.dispose();
         hintOverlay = null;
+    }
+}
+
+function dominantAxis(normal) {
+    const axes = ['x', 'y', 'z'];
+    let dominant = 'x';
+    let max = Math.abs(normal.x);
+    axes.slice(1).forEach(axis => {
+        if (Math.abs(normal[axis]) > max) {
+            dominant = axis;
+            max = Math.abs(normal[axis]);
+        }
+    });
+    return { axis: dominant, sign: Math.sign(normal[dominant]) };
+}
+
+function expectedColorForOrientation(axis, sign) {
+    if (axis === 'x') return sign > 0 ? COLORS[0] : COLORS[1];
+    if (axis === 'y') return sign > 0 ? COLORS[2] : COLORS[3];
+    return sign > 0 ? COLORS[4] : COLORS[5];
+}
+
+function isCubeSolved() {
+    const faceNormals = [
+        new THREE.Vector3(1, 0, 0),
+        new THREE.Vector3(-1, 0, 0),
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(0, -1, 0),
+        new THREE.Vector3(0, 0, 1),
+        new THREE.Vector3(0, 0, -1)
+    ];
+
+    return allCubies.every(cubie => {
+        const quaternion = cubie.getWorldQuaternion(new THREE.Quaternion());
+        const materials = Array.isArray(cubie.material) ? cubie.material : [cubie.material];
+
+        for (let i = 0; i < faceNormals.length; i++) {
+            const material = materials[i];
+            if (!material || material.color.getHex() === COLOR_BLACK) continue;
+
+            const worldNormal = faceNormals[i].clone().applyQuaternion(quaternion);
+            const { axis, sign } = dominantAxis(worldNormal);
+            const expectedColor = expectedColorForOrientation(axis, sign);
+            if (material.color.getHex() !== expectedColor) return false;
+        }
+
+        return true;
+    });
+}
+
+function checkSolvedState() {
+    if (isCubeSolved()) {
+        updateStatus('Status: Solved!');
+        stopTimer();
+        awaitingFirstMove = false;
     }
 }
 
