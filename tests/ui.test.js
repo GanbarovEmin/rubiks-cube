@@ -23,6 +23,11 @@ test('Hint workflow is surfaced in the UI copy and controls', () => {
   assert.match(html, /Нажмите «Подсказка»/);
 });
 
+test('Reset control exists and cube logic exposes a reset helper', () => {
+  assert.match(html, /btn-reset/);
+  assert.match(cubeSource, /function resetCubeToSolved/);
+});
+
 test('Cube logic wires move counter, history tracking, and hint overlay', () => {
   assert.match(cubeSource, /let moveCount = 0/);
   assert.match(cubeSource, /function updateHintAvailability/);

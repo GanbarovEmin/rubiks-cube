@@ -30,6 +30,7 @@ let pivot;
 let raycaster, mouse;
 let allCubies = [];
 let isAnimating = false;
+let animationToken = 0;
 
 let isDraggingCube = false;
 let startMousePos = { x: 0, y: 0 };
@@ -97,6 +98,8 @@ function init() {
     window.addEventListener('keydown', onKeyDown);
     document.getElementById('btn-shuffle').addEventListener('click', startShuffle);
     document.getElementById('btn-solve').addEventListener('click', startSolve);
+    const resetButton = document.getElementById('btn-reset');
+    if (resetButton) resetButton.addEventListener('click', resetCubeToSolved);
     const hintButton = document.getElementById('btn-hint');
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
 
@@ -307,6 +310,7 @@ function recordMoveInHistory(move) {
 function animateMove(move) {
     const { axis, index, dir, speed, countsTowardsMoveCount } = move;
     const duration = speed || 300;
+    const token = ++animationToken;
     isAnimating = true;
     updateStatus('Status: Moving…');
     updateHintAvailability();
@@ -328,6 +332,14 @@ function animateMove(move) {
     const startTime = performance.now();
 
     function loop(currentTime) {
+        if (token !== animationToken) {
+            pivot.rotation[axis] = targetRotation;
+            pivot.updateMatrixWorld();
+            activeCubies.forEach(cubie => scene.attach(cubie));
+            isAnimating = false;
+            return;
+        }
+
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const ease = progress < 0.5
@@ -373,6 +385,53 @@ function animateMove(move) {
     }
 
     requestAnimationFrame(loop);
+}
+
+function resetCubeToSolved() {
+    animationToken++;
+    isAnimating = false;
+    moveQueue = [];
+    moveHistory = [];
+    clearHintOverlay();
+    awaitingFirstMove = true;
+    resetMoveCounter();
+    resetTimer();
+    updateStatus('Status: Ready');
+
+    const solveBtn = document.getElementById('btn-solve');
+    if (solveBtn) solveBtn.disabled = true;
+
+    while (pivot.children.length) {
+        scene.attach(pivot.children[0]);
+    }
+
+    const disposedGeometries = new Set();
+    const disposedMaterials = new Set();
+
+    allCubies.forEach(cubie => {
+        scene.remove(cubie);
+
+        const geometry = cubie.geometry;
+        if (geometry && !disposedGeometries.has(geometry.uuid)) {
+            geometry.dispose();
+            disposedGeometries.add(geometry.uuid);
+        }
+
+        const materials = Array.isArray(cubie.material) ? cubie.material : [cubie.material];
+        materials.forEach(material => {
+            if (material && !disposedMaterials.has(material.uuid)) {
+                material.dispose();
+                disposedMaterials.add(material.uuid);
+            }
+        });
+    });
+
+    allCubies = [];
+    pivot.rotation.set(0, 0, 0);
+    pivot.updateMatrixWorld();
+
+    createRubiksCube();
+    updateHintAvailability();
 }
 
 function startShuffle() {
