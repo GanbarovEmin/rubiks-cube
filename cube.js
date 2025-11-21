@@ -313,44 +313,57 @@ function resetDragState() {
 function handleCubeDrag(dx, dy) {
     if (!intersectedFaceNormal || !intersectedCubie) return;
 
-    const moveVector = new THREE.Vector2(dx, -dy).normalize();
-    const axes = [
-        new THREE.Vector3(1, 0, 0),
-        new THREE.Vector3(0, 1, 0),
-        new THREE.Vector3(0, 0, 1)
+    const moveVector = new THREE.Vector2(dx, -dy);
+    if (moveVector.lengthSq() === 0) return;
+    moveVector.normalize();
+
+    const axisLookup = [
+        { label: 'x', vec: new THREE.Vector3(1, 0, 0) },
+        { label: 'y', vec: new THREE.Vector3(0, 1, 0) },
+        { label: 'z', vec: new THREE.Vector3(0, 0, 1) }
     ];
 
-    let bestAxis = null;
+    let faceAxis = 'x';
+    let maxNormalDot = 0;
+    axisLookup.forEach(({ label, vec }) => {
+        const dot = Math.abs(vec.dot(intersectedFaceNormal));
+        if (dot > maxNormalDot) {
+            maxNormalDot = dot;
+            faceAxis = label;
+        }
+    });
+
+    const tangentAxes = axisLookup.filter(({ label }) => label !== faceAxis);
+    let bestTangent = null;
     let maxDot = 0;
     let screenDirection = 1;
 
-    axes.forEach(axis => {
-        if (Math.abs(axis.dot(intersectedFaceNormal)) > 0.9) return;
-        const axis2D = projectVectorToScreen(axis);
+    tangentAxes.forEach(axis => {
+        const axis2D = projectVectorToScreen(axis.vec);
         const dot = axis2D.dot(moveVector);
         if (Math.abs(dot) > maxDot) {
             maxDot = Math.abs(dot);
-            bestAxis = axis;
+            bestTangent = axis;
             screenDirection = dot > 0 ? 1 : -1;
         }
     });
 
-    if (!bestAxis) return;
-
-    const rotationVector = new THREE.Vector3().crossVectors(intersectedFaceNormal, bestAxis);
-    let rotAxisLabel = '';
-    if (Math.abs(rotationVector.x) > 0.9) rotAxisLabel = 'x';
-    else if (Math.abs(rotationVector.y) > 0.9) rotAxisLabel = 'y';
-    else rotAxisLabel = 'z';
+    if (!bestTangent) return;
 
     const unit = CUBE_SIZE + SPACING;
     const localPos = intersectedCubie.position.clone().divideScalar(unit).round();
+    const faceNormalSign = Math.sign(intersectedFaceNormal[faceAxis]) || 1;
 
-    let rotDir = rotationVector[rotAxisLabel] > 0 ? 1 : -1;
-    rotDir *= screenDirection;
-    if (rotAxisLabel === 'x') rotDir *= -1;
+    let rotDir = screenDirection * faceNormalSign;
+    if (faceAxis === 'x') {
+        rotDir *= bestTangent.label === 'y' ? 1 : -1;
+    } else if (faceAxis === 'y') {
+        rotDir *= bestTangent.label === 'z' ? 1 : -1;
+    } else {
+        rotDir *= bestTangent.label === 'x' ? 1 : -1;
+    }
 
-    queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    queueMove(faceAxis, localPos[faceAxis], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
 }
 
 function projectVectorToScreen(vector) {
