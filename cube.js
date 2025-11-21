@@ -97,7 +97,6 @@ let hintTimeout = null;
 let shuffleDifficulty = 'medium';
 let pendingShuffleMoves = 0;
 let lastShuffleCount = 0;
-let controlMode = 'drag';
 let moveSpeed = 'normal';
 let moveDuration = MOVE_SPEEDS[moveSpeed];
 let soundEnabled = true;
