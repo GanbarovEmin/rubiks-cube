@@ -46,6 +46,7 @@ let animationToken = 0;
 let isAutoSolving = false;
 
 let isDraggingCube = false;
+let dragMoveCommitted = false;
 let startMousePos = { x: 0, y: 0 };
 let intersectedCubie = null;
 let intersectedFaceNormal = null;
@@ -258,11 +259,13 @@ function updateHoverHighlight(event) {
 
 function onMouseDown(event) {
     if (!isPointerInteractionAllowed()) return;
+    if (event.button !== undefined && event.button !== 0) return;
     const intersects = getIntersects(event, renderer.domElement);
     if (!intersects.length) return;
 
     controls.enabled = false;
     isDraggingCube = true;
+    dragMoveCommitted = false;
     intersectedCubie = intersects[0].object;
     intersectedCubie.getWorldQuaternion(tempQuaternion);
     intersectedFaceNormal = intersects[0].face.normal.clone().applyQuaternion(tempQuaternion).round();
@@ -278,22 +281,20 @@ function onTouchStart(event) {
 }
 
 function onMouseMove(event) {
-    if (!isPointerInteractionAllowed()) {
-        clearHoverHighlight();
-        return;
-    }
-
     if (isDraggingCube && intersectedCubie) {
+        if (!isPointerInteractionAllowed() || dragMoveCommitted) return;
         const clientX = event.clientX ?? (event.touches && event.touches[0].clientX);
         const clientY = event.clientY ?? (event.touches && event.touches[0].clientY);
 
         const dx = clientX - startMousePos.x;
         const dy = clientY - startMousePos.y;
 
-        if (Math.sqrt(dx * dx + dy * dy) > dragThreshold) {
-            handleCubeDrag(dx, dy);
-            resetDragState();
-        }
+        handleCubeDrag(dx, dy);
+        return;
+    }
+
+    if (!isPointerInteractionAllowed()) {
+        clearHoverHighlight();
         return;
     }
 
@@ -322,6 +323,7 @@ function onMouseLeave() {
 
 function resetDragState() {
     isDraggingCube = false;
+    dragMoveCommitted = false;
     intersectedCubie = null;
     intersectedFaceNormal = null;
     controls.enabled = true;
@@ -385,13 +387,23 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
 }
 
 function handleCubeDrag(dx, dy) {
-    if (!intersectedFaceNormal || !intersectedCubie) return;
+    if (!intersectedFaceNormal || !intersectedCubie || dragMoveCommitted) return;
 
-    const moveVector = new THREE.Vector2(dx, -dy);
-    if (moveVector.lengthSq() === 0) return;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const dominantDelta = Math.max(absX, absY);
+    if (dominantDelta < dragThreshold) return;
 
-    const moveFromHover = deriveMoveFromGesture(intersectedFaceNormal, intersectedCubie, moveVector);
+    const isHorizontal = absX >= absY;
+    const directionVector = isHorizontal
+        ? new THREE.Vector2(Math.sign(dx) || 0, 0)
+        : new THREE.Vector2(0, Math.sign(-dy) || 0);
+
+    if (directionVector.lengthSq() === 0) return;
+
+    const moveFromHover = deriveMoveFromGesture(intersectedFaceNormal, intersectedCubie, directionVector);
     if (moveFromHover) {
+        dragMoveCommitted = true;
         queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
             countsTowardsMoveCount: true
         });
