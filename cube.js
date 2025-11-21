@@ -65,6 +65,7 @@ const KEYBOARD_DRAG_VECTORS = {
 };
 
 let scene, camera, renderer, controls;
+let defaultCameraPosition, defaultControlsTarget;
 let pivot;
 let raycaster, mouse;
 let allCubies = [];
@@ -135,6 +136,9 @@ function init() {
     controls.minDistance = 4;
     controls.maxDistance = 20;
 
+    defaultCameraPosition = camera.position.clone();
+    defaultControlsTarget = controls.target.clone();
+
     raycaster = new THREE.Raycaster();
     mouse = new THREE.Vector2();
 
@@ -161,6 +165,8 @@ function init() {
     document.getElementById('btn-solve').addEventListener('click', startSolve);
     const resetButton = document.getElementById('btn-reset');
     if (resetButton) resetButton.addEventListener('click', resetCubeToSolved);
+    const resetCameraButton = document.getElementById('btn-reset-camera');
+    if (resetCameraButton) resetCameraButton.addEventListener('click', resetCameraView);
     const hintButton = document.getElementById('btn-hint');
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
     const playAgainButton = document.getElementById('btn-play-again');
@@ -754,6 +760,14 @@ function resetCubeToSolved() {
 
     createRubiksCube();
     updateHintAvailability();
+}
+
+function resetCameraView() {
+    if (!camera || !controls || !defaultCameraPosition || !defaultControlsTarget) return;
+    camera.position.copy(defaultCameraPosition);
+    controls.target.copy(defaultControlsTarget);
+    controls.update();
+    updateGizmoPosition();
 }
 
 function startShuffle() {
