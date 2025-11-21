@@ -33,6 +33,12 @@ test('Speed selector surfaces slow, normal, and fast presets', () => {
   assert.match(cubeSource, /function setMoveSpeed/);
 });
 
+test('Move speed presets map to the expected durations', () => {
+  assert.match(cubeSource, /MOVE_SPEEDS = {\s*slow: 550,/);
+  assert.match(cubeSource, /normal: 350,/);
+  assert.match(cubeSource, /fast: 150/);
+});
+
 test('Hint workflow is surfaced in the UI copy and controls', () => {
   assert.match(html, /btn-hint/);
   assert.match(html, /Подсказка/);

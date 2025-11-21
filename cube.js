@@ -762,7 +762,6 @@ function startShuffle() {
     clearHintOverlay();
     resetMoveCounter();
     resetTimer();
-    moveHistory = [];
     updateStatus('Status: Shuffling…');
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
