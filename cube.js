@@ -30,6 +30,13 @@ const KEY_MOVES = {
     b: { axis: 'z', index: -1, dir: -1 }
 };
 
+const KEYBOARD_DRAG_VECTORS = {
+    w: new THREE.Vector2(0, 1),
+    a: new THREE.Vector2(-1, 0),
+    s: new THREE.Vector2(0, -1),
+    d: new THREE.Vector2(1, 0)
+};
+
 let scene, camera, renderer, controls;
 let pivot;
 let raycaster, mouse;
@@ -46,6 +53,8 @@ const dragThreshold = 30;
 
 let hoveredMaterial = null;
 let hoveredEmissive = null;
+let hoveredCubie = null;
+let hoveredFaceNormal = null;
 
 let moveQueue = [];
 let moveHistory = [];
@@ -212,6 +221,8 @@ function clearHoverHighlight() {
     }
     hoveredMaterial = null;
     hoveredEmissive = null;
+    hoveredCubie = null;
+    hoveredFaceNormal = null;
 }
 
 function updateHoverHighlight(event) {
@@ -225,6 +236,10 @@ function updateHoverHighlight(event) {
     const materialIndex = face?.materialIndex ?? Math.floor((face?.faceIndex ?? 0) / 2);
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     const material = materials[materialIndex];
+    const faceNormal = face?.normal
+        ?.clone()
+        ?.applyQuaternion(object.getWorldQuaternion(new THREE.Quaternion()))
+        ?.round();
 
     if (!material || material === hoveredMaterial) return;
     if (material.color.getHex() === COLOR_BLACK) {
@@ -235,6 +250,8 @@ function updateHoverHighlight(event) {
     clearHoverHighlight();
     hoveredMaterial = material;
     hoveredEmissive = material.emissive.clone();
+    hoveredCubie = object;
+    hoveredFaceNormal = faceNormal;
     material.emissive.setHex(0x222222);
     material.emissiveIntensity = 0.6;
 }
@@ -314,9 +331,9 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
     if (!faceNormal || !cubie) return null;
     if (!moveVector || moveVector.lengthSq() === 0) return null;
 
-    const moveVector = new THREE.Vector2(dx, -dy);
-    if (moveVector.lengthSq() === 0) return;
-    moveVector.normalize();
+    const normalizedMove = moveVector.clone();
+    if (normalizedMove.lengthSq() === 0) return null;
+    normalizedMove.normalize();
 
     const axisLookup = [
         { label: 'x', vec: new THREE.Vector3(1, 0, 0) },
@@ -327,7 +344,7 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
     let faceAxis = 'x';
     let maxNormalDot = 0;
     axisLookup.forEach(({ label, vec }) => {
-        const dot = Math.abs(vec.dot(intersectedFaceNormal));
+        const dot = Math.abs(vec.dot(faceNormal));
         if (dot > maxNormalDot) {
             maxNormalDot = dot;
             faceAxis = label;
@@ -341,7 +358,7 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
 
     tangentAxes.forEach(axis => {
         const axis2D = projectVectorToScreen(axis.vec);
-        const dot = axis2D.dot(moveVector);
+        const dot = axis2D.dot(normalizedMove);
         if (Math.abs(dot) > maxDot) {
             maxDot = Math.abs(dot);
             bestTangent = axis;
@@ -352,8 +369,8 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
     if (!bestTangent) return;
 
     const unit = CUBE_SIZE + SPACING;
-    const localPos = intersectedCubie.position.clone().divideScalar(unit).round();
-    const faceNormalSign = Math.sign(intersectedFaceNormal[faceAxis]) || 1;
+    const localPos = cubie.position.clone().divideScalar(unit).round();
+    const faceNormalSign = Math.sign(faceNormal[faceAxis]) || 1;
 
     let rotDir = screenDirection * faceNormalSign;
     if (faceAxis === 'x') {
@@ -364,7 +381,21 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
         rotDir *= bestTangent.label === 'x' ? 1 : -1;
     }
 
-    queueMove(faceAxis, localPos[faceAxis], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    return { axis: faceAxis, index: localPos[faceAxis], dir: rotDir };
+}
+
+function handleCubeDrag(dx, dy) {
+    if (!intersectedFaceNormal || !intersectedCubie) return;
+
+    const moveVector = new THREE.Vector2(dx, -dy);
+    if (moveVector.lengthSq() === 0) return;
+
+    const moveFromHover = deriveMoveFromGesture(intersectedFaceNormal, intersectedCubie, moveVector);
+    if (moveFromHover) {
+        queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
+            countsTowardsMoveCount: true
+        });
+    }
 }
 
 function projectVectorToScreen(vector) {
