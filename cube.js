@@ -310,8 +310,9 @@ function resetDragState() {
     controls.enabled = true;
 }
 
-function handleCubeDrag(dx, dy) {
-    if (!intersectedFaceNormal || !intersectedCubie) return;
+function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
+    if (!faceNormal || !cubie) return null;
+    if (!moveVector || moveVector.lengthSq() === 0) return null;
 
     const moveVector = new THREE.Vector2(dx, -dy);
     if (moveVector.lengthSq() === 0) return;
@@ -654,7 +655,20 @@ function animate() {
 
 function onKeyDown(event) {
     if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
-    const move = KEY_MOVES[event.key.toLowerCase()];
+
+    const key = event.key.toLowerCase();
+    const dragVector = KEYBOARD_DRAG_VECTORS[key];
+    if (dragVector && hoveredCubie && hoveredFaceNormal) {
+        const moveFromHover = deriveMoveFromGesture(hoveredFaceNormal, hoveredCubie, dragVector);
+        if (moveFromHover) {
+            queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
+                countsTowardsMoveCount: true
+            });
+        }
+        return;
+    }
+
+    const move = KEY_MOVES[key];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
     queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
