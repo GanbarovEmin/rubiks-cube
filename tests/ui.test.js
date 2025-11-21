@@ -17,6 +17,14 @@ test('HUD includes status, move counter, instructions, and UI controls', () => {
   assert.match(html, /id="ui-container"/);
 });
 
+test('Shuffle difficulty selector lists easy, medium, and hard options', () => {
+  assert.match(html, /id="shuffle-difficulty"/);
+  assert.match(html, />Easy<\/option>/);
+  assert.match(html, />Medium<\/option>/);
+  assert.match(html, />Hard<\/option>/);
+  assert.match(html, /shuffle-range-hint/);
+});
+
 test('Hint workflow is surfaced in the UI copy and controls', () => {
   assert.match(html, /btn-hint/);
   assert.match(html, /Подсказка/);
@@ -28,6 +36,12 @@ test('Cube logic wires move counter, history tracking, and hint overlay', () => 
   assert.match(cubeSource, /function updateHintAvailability/);
   assert.match(cubeSource, /function showHintOverlay/);
   assert.match(cubeSource, /document\.getElementById\('btn-hint'\)/);
+});
+
+test('Shuffle move ranges cover easy, medium, and hard difficulties', () => {
+  assert.match(cubeSource, /const SHUFFLE_MOVE_RANGES = {\s*easy: \[10, 15\]/);
+  assert.match(cubeSource, /medium: \[20, 25\]/);
+  assert.match(cubeSource, /hard: \[40, 45\]/);
 });
 
 test('README documents the liquid glass UI and hint button', () => {
