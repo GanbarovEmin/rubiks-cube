@@ -8,6 +8,7 @@ An elegant Rubik's cube playground that pairs a premium liquid-glass HUD with si
 - **Move Counter** – glass indicator tracks every manual twist so you instantly see your solve progress.
 - **Hint Button (`Подсказка`)** – highlights the exact layer to turn, flashing an on-cube glow when you're stuck.
 - **Shuffle / Solve** – scramble with randomized moves and instantly unwind via reversible move history.
+- **Speed Presets** – toggle Slow / Normal / Fast to pick your preferred animation tempo.
 - **Keyboard & Pointer Controls** – drag stickers, orbit the camera, or use `R L U D F B` (+ `Shift` for inverse).
 - **Settings Panel** – toggle drag vs gizmo controls, pick animation speed, flip sound on/off, and switch between light or dark themes with session persistence.
 
