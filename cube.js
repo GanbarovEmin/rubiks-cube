@@ -5,6 +5,11 @@ const SPACING = 0.02;
 const ANIMATION_SPEED_SHUFFLE = 100;
 const ANIMATION_SPEED_SOLVE = 150;
 const ANIMATION_SPEED_MANUAL = 250;
+const SHUFFLE_RANGES = {
+    easy: [10, 15],
+    medium: [20, 25],
+    hard: [40, 45]
+};
 
 const COLORS = [
     0xb90000,
@@ -44,6 +49,9 @@ let moveHistory = [];
 let moveCount = 0;
 let hintOverlay = null;
 let hintTimeout = null;
+let shuffleDifficulty = 'medium';
+let pendingShuffleMoves = 0;
+let lastShuffleCount = 0;
 
 let isTimerRunning = false;
 let timerStartTime = 0;
@@ -106,6 +114,17 @@ function init() {
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
     const playAgainButton = document.getElementById('btn-play-again');
     if (playAgainButton) playAgainButton.addEventListener('click', onPlayAgain);
+
+    const difficultySelect = document.getElementById('shuffle-difficulty');
+    if (difficultySelect) {
+        shuffleDifficulty = difficultySelect.value;
+        updateShuffleRangeHelper(shuffleDifficulty);
+        difficultySelect.addEventListener('change', event => {
+            shuffleDifficulty = event.target.value;
+            updateStatus(`Status: Difficulty set to ${formatDifficultyLabel(shuffleDifficulty)}`);
+            updateShuffleRangeHelper(shuffleDifficulty);
+        });
+    }
 
     const canvas = renderer.domElement;
     canvas.addEventListener('mousedown', onMouseDown);
@@ -285,11 +304,11 @@ function projectVectorToScreen(vector) {
 }
 
 function queueMove(axis, index, dir, speed, options = {}) {
-    const { isSolving = false, countsTowardsMoveCount = false } = options;
+    const { isSolving = false, countsTowardsMoveCount = false, isShuffle = false } = options;
     if (countsTowardsMoveCount) {
         startTimerIfNeeded();
     }
-    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount });
+    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount, isShuffle });
     processQueue();
 }
 
@@ -324,7 +343,7 @@ function recordMoveInHistory(move) {
 }
 
 function animateMove(move) {
-    const { axis, index, dir, speed, countsTowardsMoveCount } = move;
+    const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
     const duration = speed || 300;
     const token = ++animationToken;
     isAnimating = true;
@@ -392,8 +411,19 @@ function animateMove(move) {
             if (countsTowardsMoveCount) {
                 incrementMoveCounter();
             }
+            if (isShuffle && pendingShuffleMoves > 0) {
+                pendingShuffleMoves -= 1;
+            }
             isAnimating = false;
-            updateStatus('Status: Ready');
+            if (isShuffle) {
+                if (pendingShuffleMoves === 0) {
+                    updateStatus(`Status: Shuffled (${formatDifficultyLabel(shuffleDifficulty)} • ${lastShuffleCount} moves)`);
+                } else {
+                    updateStatus(`Status: Shuffling (${pendingShuffleMoves} to go)`);
+                }
+            } else {
+                updateStatus('Status: Ready');
+            }
             updateHintAvailability();
             checkSolvedState();
             processQueue();
@@ -460,17 +490,22 @@ function startShuffle() {
     clearHintOverlay();
     resetMoveCounter();
     resetTimer();
+    moveHistory = [];
     updateStatus('Status: Shuffling…');
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
-    const moves = 20;
+    const moves = getShuffleMoveCount();
+    lastShuffleCount = moves;
+    pendingShuffleMoves = moves;
+
+    updateStatus(`Status: Shuffling (${formatDifficultyLabel(shuffleDifficulty)} • ${moves} moves)`);
 
     for (let i = 0; i < moves; i++) {
         const axis = axes[Math.floor(Math.random() * axes.length)];
         const index = indices[Math.floor(Math.random() * indices.length)];
         const dir = dirs[Math.floor(Math.random() * dirs.length)];
-        queueMove(axis, index, dir, ANIMATION_SPEED_SHUFFLE);
+        queueMove(axis, index, dir, ANIMATION_SPEED_SHUFFLE, { isShuffle: true });
     }
 
     const solveBtn = document.getElementById('btn-solve');
@@ -478,6 +513,28 @@ function startShuffle() {
     updateHintAvailability();
 }
 
+function getShuffleMoveCount() {
+    const [min, max] = SHUFFLE_RANGES[shuffleDifficulty] || SHUFFLE_RANGES.medium;
+    return randomInt(min, max);
+}
+
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function formatDifficultyLabel(difficulty) {
+    return `${difficulty.charAt(0).toUpperCase()}${difficulty.slice(1).toLowerCase()}`;
+}
+
+function updateShuffleRangeHelper(difficulty) {
+    const helper = document.getElementById('shuffle-range');
+    const [min, max] = SHUFFLE_RANGES[difficulty] || SHUFFLE_RANGES.medium;
+    if (helper) helper.textContent = `${min}–${max} moves`;
+}
+
+function startSolve() {
+    if (moveHistory.length === 0) return;
+    pendingShuffleMoves = 0;
 function buildInverseSequence(history) {
     return [...history]
         .reverse()
