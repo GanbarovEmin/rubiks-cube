@@ -14,6 +14,20 @@
             --accent-secondary: #f97316;
             --text-primary: #0f172a;
             --text-muted: #475569;
+            --panel-surface: rgba(255, 255, 255, 0.92);
+        }
+
+        body.theme-dark {
+            --glass-bg: rgba(20, 24, 35, 0.78);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shadow: 0 30px 70px rgba(0, 0, 0, 0.4);
+            --accent: #22d3ee;
+            --accent-hover: #67e8f9;
+            --accent-secondary: #f59e0b;
+            --text-primary: #e2e8f0;
+            --text-muted: #cbd5e1;
+            --panel-surface: rgba(24, 32, 48, 0.9);
+            background: radial-gradient(circle at 15% 20%, #0f172a 0%, #0b1220 42%, #0a0f1c 70%, #050a16 100%);
         }
 
         * {
@@ -287,6 +301,10 @@
             color: rgba(255, 255, 255, 0.8);
         }
 
+        .hidden {
+            display: none !important;
+        }
+
         #victory-overlay {
             position: fixed;
             inset: 0;
@@ -312,6 +330,143 @@
             min-width: 320px;
             text-align: center;
             pointer-events: auto;
+        }
+
+        .settings-toggle {
+            position: absolute;
+            top: 32px;
+            right: 32px;
+            z-index: 3;
+            padding: 12px 20px;
+            font-size: 14px;
+            letter-spacing: 0.6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .settings-toggle .icon {
+            font-size: 16px;
+        }
+
+        .settings-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.35);
+            z-index: 2;
+        }
+
+        .settings-panel {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            min-width: 280px;
+            max-width: 320px;
+            background: var(--panel-surface);
+            border: 1px solid var(--glass-border);
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: var(--glass-shadow);
+            z-index: 3;
+            color: var(--text-primary);
+        }
+
+        .settings-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .settings-title {
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            font-size: 13px;
+        }
+
+        .settings-close {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 12px;
+            box-shadow: none;
+        }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 14px;
+        }
+
+        .settings-field label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 700;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        .settings-field .description {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+
+        .settings-field .inline-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+        }
+
+        .gizmo-controls {
+            position: absolute;
+            top: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 12px 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            box-shadow: var(--glass-shadow);
+            z-index: 2;
+        }
+
+        .gizmo-controls button {
+            padding: 8px 12px;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        @media (max-width: 640px) {
+            #instructions {
+                position: static;
+                margin: 16px;
+            }
+
+            .settings-toggle {
+                right: 16px;
+                top: 16px;
+            }
+
+            .settings-panel {
+                right: 12px;
+                left: 12px;
+            }
+
+            .gizmo-controls {
+                top: 16px;
+                width: calc(100% - 32px);
+                justify-content: center;
+            }
         }
 
         .victory-title {
@@ -352,6 +507,52 @@
         Нажмите «Подсказка», чтобы подсветить следующий ход.
     </div>
 
+    <button id="settings-toggle" class="settings-toggle">
+        <span class="icon">⚙</span> Settings
+    </button>
+
+    <div id="settings-backdrop" class="settings-backdrop hidden"></div>
+    <div id="settings-panel" class="settings-panel hidden" role="dialog" aria-modal="true">
+        <div class="settings-header">
+            <div class="settings-title">Settings</div>
+            <button class="settings-close" id="settings-close" aria-label="Close settings">✕</button>
+        </div>
+        <div class="settings-grid">
+            <div class="settings-field">
+                <label for="control-mode-select">Control Mode</label>
+                <select id="control-mode-select">
+                    <option value="drag">Drag</option>
+                    <option value="gizmo">Gizmo</option>
+                </select>
+                <div class="description">Choose how you interact with the cube.</div>
+            </div>
+            <div class="settings-field">
+                <label for="speed-select">Animation Speed</label>
+                <select id="speed-select">
+                    <option value="slow">Slow</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="fast">Fast</option>
+                </select>
+                <div class="description">Adjust how quickly turns animate.</div>
+            </div>
+            <div class="settings-field">
+                <label for="sound-toggle">Sound</label>
+                <div class="inline-toggle">
+                    <input type="checkbox" id="sound-toggle" checked>
+                    <span>Enable move sounds</span>
+                </div>
+            </div>
+            <div class="settings-field">
+                <label for="theme-select">Theme</label>
+                <select id="theme-select">
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                </select>
+                <div class="description">Switch between light and dark glass themes.</div>
+            </div>
+        </div>
+    </div>
+
     <div id="ui-container">
         <div class="control-group">
             <label for="control-mode-select">Control Mode</label>
@@ -374,6 +575,21 @@
         <button id="btn-reset">Reset</button>
         <button id="btn-solve" disabled>Solve</button>
         <button id="btn-hint" disabled>Подсказка</button>
+    </div>
+
+    <div id="gizmo-controls" class="gizmo-controls hidden" aria-label="Gizmo controls">
+        <button data-move="r">R</button>
+        <button data-move="r'">R'</button>
+        <button data-move="l">L</button>
+        <button data-move="l'">L'</button>
+        <button data-move="u">U</button>
+        <button data-move="u'">U'</button>
+        <button data-move="d">D</button>
+        <button data-move="d'">D'</button>
+        <button data-move="f">F</button>
+        <button data-move="f'">F'</button>
+        <button data-move="b">B</button>
+        <button data-move="b'">B'</button>
     </div>
 
     <div id="victory-overlay" class="hidden">
