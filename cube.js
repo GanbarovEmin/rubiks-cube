@@ -35,6 +35,8 @@ let pivot;
 let raycaster, mouse;
 let allCubies = [];
 let isAnimating = false;
+let animationToken = 0;
+let isAutoSolving = false;
 
 let isDraggingCube = false;
 let startMousePos = { x: 0, y: 0 };
@@ -55,6 +57,7 @@ let isTimerRunning = false;
 let timerStartTime = 0;
 let timerElapsed = 0;
 let awaitingFirstMove = true;
+let wasSolved = false;
 
 const tempQuaternion = new THREE.Quaternion();
 
@@ -105,8 +108,12 @@ function init() {
     window.addEventListener('keydown', onKeyDown);
     document.getElementById('btn-shuffle').addEventListener('click', startShuffle);
     document.getElementById('btn-solve').addEventListener('click', startSolve);
+    const resetButton = document.getElementById('btn-reset');
+    if (resetButton) resetButton.addEventListener('click', resetCubeToSolved);
     const hintButton = document.getElementById('btn-hint');
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
+    const playAgainButton = document.getElementById('btn-play-again');
+    if (playAgainButton) playAgainButton.addEventListener('click', onPlayAgain);
 
     const difficultySelect = document.getElementById('shuffle-difficulty');
     if (difficultySelect) {
@@ -192,7 +199,7 @@ function getIntersects(event, element) {
 }
 
 function onMouseDown(event) {
-    if (isAnimating || moveQueue.length > 0) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
     const intersects = getIntersects(event, renderer.domElement);
     if (!intersects.length) return;
 
@@ -306,13 +313,25 @@ function queueMove(axis, index, dir, speed, options = {}) {
 }
 
 function processQueue() {
-    if (isAnimating || moveQueue.length === 0) return;
+    if (isAnimating) return;
+    if (moveQueue.length === 0) {
+        handleQueueIdle();
+        return;
+    }
     const move = moveQueue.shift();
     if (!move.isSolving) {
         recordMoveInHistory(move);
     }
     updateHintAvailability();
     animateMove(move);
+}
+
+function handleQueueIdle() {
+    if (isAutoSolving) {
+        isAutoSolving = false;
+        updateStatus('Status: Ready');
+    }
+    updateHintAvailability();
 }
 
 function recordMoveInHistory(move) {
@@ -326,6 +345,7 @@ function recordMoveInHistory(move) {
 function animateMove(move) {
     const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
     const duration = speed || 300;
+    const token = ++animationToken;
     isAnimating = true;
     updateStatus('Status: Moving…');
     updateHintAvailability();
@@ -347,6 +367,14 @@ function animateMove(move) {
     const startTime = performance.now();
 
     function loop(currentTime) {
+        if (token !== animationToken) {
+            pivot.rotation[axis] = targetRotation;
+            pivot.updateMatrixWorld();
+            activeCubies.forEach(cubie => scene.attach(cubie));
+            isAnimating = false;
+            return;
+        }
+
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
         const ease = progress < 0.5
@@ -405,11 +433,65 @@ function animateMove(move) {
     requestAnimationFrame(loop);
 }
 
+function resetCubeToSolved() {
+    animationToken++;
+    isAnimating = false;
+    isAutoSolving = false;
+    moveQueue = [];
+    moveHistory = [];
+    clearHintOverlay();
+    awaitingFirstMove = true;
+    resetMoveCounter();
+    resetTimer();
+    updateStatus('Status: Ready');
+
+    const solveBtn = document.getElementById('btn-solve');
+    if (solveBtn) solveBtn.disabled = true;
+
+    while (pivot.children.length) {
+        scene.attach(pivot.children[0]);
+    }
+
+    const disposedGeometries = new Set();
+    const disposedMaterials = new Set();
+
+    allCubies.forEach(cubie => {
+        scene.remove(cubie);
+
+        const geometry = cubie.geometry;
+        if (geometry && !disposedGeometries.has(geometry.uuid)) {
+            geometry.dispose();
+            disposedGeometries.add(geometry.uuid);
+        }
+
+        const materials = Array.isArray(cubie.material) ? cubie.material : [cubie.material];
+        materials.forEach(material => {
+            if (material && !disposedMaterials.has(material.uuid)) {
+                material.dispose();
+                disposedMaterials.add(material.uuid);
+            }
+        });
+    });
+
+    allCubies = [];
+    pivot.rotation.set(0, 0, 0);
+    pivot.updateMatrixWorld();
+
+    createRubiksCube();
+    updateHintAvailability();
+}
+
 function startShuffle() {
-    if (isAnimating) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
+    moveQueue = [];
+    moveHistory = [];
+    wasSolved = false;
+    hideVictoryUI();
+    clearHintOverlay();
     resetMoveCounter();
     resetTimer();
     moveHistory = [];
+    updateStatus('Status: Shuffling…');
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
@@ -453,17 +535,36 @@ function updateShuffleRangeHelper(difficulty) {
 function startSolve() {
     if (moveHistory.length === 0) return;
     pendingShuffleMoves = 0;
+function buildInverseSequence(history) {
+    return [...history]
+        .reverse()
+        .map(move => ({ axis: move.axis, index: move.index, dir: move.dir * -1 }));
+}
+
+function startSolve() {
+    if (isAnimating || moveQueue.length > 0 || moveHistory.length === 0 || isAutoSolving) return;
+
+    const inverseMoves = buildInverseSequence(moveHistory);
+    if (inverseMoves.length === 0) return;
+
+    isAutoSolving = true;
     moveQueue = [];
-    const reversedHistory = [...moveHistory].reverse();
-    reversedHistory.forEach(move => {
-        queueMove(move.axis, move.index, move.dir * -1, ANIMATION_SPEED_SOLVE, { isSolving: true });
+    updateStatus('Status: Solving…');
+
+    inverseMoves.forEach(move => {
+        queueMove(move.axis, move.index, move.dir, ANIMATION_SPEED_SOLVE, { isSolving: true });
     });
+
     moveHistory = [];
     resetMoveCounter();
-    const solveBtn = document.getElementById('btn-solve');
-    if (solveBtn) solveBtn.disabled = true;
     clearHintOverlay();
     updateHintAvailability();
+}
+
+function onPlayAgain() {
+    hideVictoryUI();
+    wasSolved = false;
+    startShuffle();
 }
 
 function onWindowResize() {
@@ -480,7 +581,7 @@ function animate() {
 }
 
 function onKeyDown(event) {
-    if (isAnimating || moveQueue.length > 0) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
     const move = KEY_MOVES[event.key.toLowerCase()];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
@@ -536,6 +637,21 @@ function formatTime(ms) {
     return `${minutes}:${seconds}.${hundredths}`;
 }
 
+function showVictoryUI(finalTimeMs, finalMoves) {
+    const overlay = document.getElementById('victory-overlay');
+    const timeDisplay = document.getElementById('victory-time');
+    const moveDisplay = document.getElementById('victory-moves');
+
+    if (timeDisplay) timeDisplay.textContent = formatTime(finalTimeMs);
+    if (moveDisplay) moveDisplay.textContent = finalMoves;
+    if (overlay) overlay.classList.remove('hidden');
+}
+
+function hideVictoryUI() {
+    const overlay = document.getElementById('victory-overlay');
+    if (overlay) overlay.classList.add('hidden');
+}
+
 function updateTimerDisplay(ms) {
     const timer = document.getElementById('timer');
     if (timer) timer.textContent = `Time: ${formatTime(ms)}`;
@@ -588,7 +704,8 @@ function incrementMoveCounter() {
 function updateHintAvailability() {
     const hintBtn = document.getElementById('btn-hint');
     const solveBtn = document.getElementById('btn-solve');
-    const canInteract = !isAnimating && moveQueue.length === 0;
+    const shuffleBtn = document.getElementById('btn-shuffle');
+    const canInteract = !isAnimating && moveQueue.length === 0 && !isAutoSolving;
     const hasHistory = moveHistory.length > 0;
 
     if (hintBtn) {
@@ -597,6 +714,10 @@ function updateHintAvailability() {
 
     if (solveBtn) {
         solveBtn.disabled = !hasHistory || !canInteract;
+    }
+
+    if (shuffleBtn) {
+        shuffleBtn.disabled = !canInteract;
     }
 }
 
@@ -719,11 +840,18 @@ function isCubeSolved() {
 }
 
 function checkSolvedState() {
-    if (isCubeSolved()) {
-        updateStatus('Status: Solved!');
+    const solvedNow = isCubeSolved();
+
+    if (!wasSolved && solvedNow) {
         stopTimer();
         awaitingFirstMove = false;
+        updateStatus('Status: Solved!');
+        showVictoryUI(timerElapsed, moveCount);
+    } else if (wasSolved && !solvedNow) {
+        hideVictoryUI();
     }
+
+    wasSolved = solvedNow;
 }
 
 init();
