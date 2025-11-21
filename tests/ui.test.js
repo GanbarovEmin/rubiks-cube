@@ -25,6 +25,14 @@ test('Shuffle difficulty selector lists easy, medium, and hard options', () => {
   assert.match(html, /shuffle-range-hint/);
 });
 
+test('Speed selector surfaces slow, normal, and fast presets', () => {
+  assert.match(html, /id="speed-select"/);
+  assert.match(html, />Slow<\/option>/);
+  assert.match(html, />Normal<\/option>/);
+  assert.match(html, />Fast<\/option>/);
+  assert.match(cubeSource, /function setMoveSpeed/);
+});
+
 test('Hint workflow is surfaced in the UI copy and controls', () => {
   assert.match(html, /btn-hint/);
   assert.match(html, /Подсказка/);

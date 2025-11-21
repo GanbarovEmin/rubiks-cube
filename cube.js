@@ -2,9 +2,11 @@
 
 const CUBE_SIZE = 1;
 const SPACING = 0.02;
-const ANIMATION_SPEED_SHUFFLE = 100;
-const ANIMATION_SPEED_SOLVE = 150;
-const ANIMATION_SPEED_MANUAL = 250;
+const MOVE_SPEEDS = {
+    slow: 550,
+    normal: 350,
+    fast: 150
+};
 const SHUFFLE_MOVE_RANGES = {
     easy: [10, 15],
     medium: [20, 25],
@@ -69,6 +71,8 @@ let hintTimeout = null;
 let shuffleDifficulty = 'medium';
 let pendingShuffleMoves = 0;
 let lastShuffleCount = 0;
+let moveDuration = MOVE_SPEEDS.normal;
+let moveSpeedMode = 'normal';
 
 let isTimerRunning = false;
 let timerStartTime = 0;
@@ -77,6 +81,17 @@ let awaitingFirstMove = true;
 let wasSolved = false;
 
 const tempQuaternion = new THREE.Quaternion();
+
+function setMoveSpeed(mode) {
+    const normalizedMode = MOVE_SPEEDS[mode] ? mode : 'normal';
+    moveSpeedMode = normalizedMode;
+    moveDuration = MOVE_SPEEDS[normalizedMode];
+
+    const speedSelect = document.getElementById('speed-select');
+    if (speedSelect && speedSelect.value !== normalizedMode) {
+        speedSelect.value = normalizedMode;
+    }
+}
 
 function init() {
     const container = document.getElementById('canvas-container');
@@ -144,6 +159,16 @@ function init() {
             updateShuffleRangeHelper(shuffleDifficulty);
             updateStatus(`Status: Difficulty set to ${formatDifficultyLabel(shuffleDifficulty)}`);
         });
+    }
+
+    const speedSelect = document.getElementById('speed-select');
+    if (speedSelect) {
+        setMoveSpeed(speedSelect.value || moveSpeedMode);
+        speedSelect.addEventListener('change', event => {
+            setMoveSpeed(event.target.value);
+        });
+    } else {
+        setMoveSpeed('normal');
     }
 
     const canvas = renderer.domElement;
@@ -305,7 +330,7 @@ function onGizmoArrowClick(directionVector) {
     const move = deriveMoveFromGesture(worldNormal, selectedFace.cubie, directionVector.clone());
     if (!move) return;
 
-    queueMove(move.axis, move.index, move.dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    queueMove(move.axis, move.index, move.dir, { countsTowardsMoveCount: true });
 }
 
 function getSelectedFaceWorldNormal() {
@@ -522,7 +547,7 @@ function handleCubeDrag(dx, dy) {
     const moveFromHover = deriveMoveFromGesture(intersectedFaceNormal, intersectedCubie, directionVector);
     if (moveFromHover) {
         dragMoveCommitted = true;
-        queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
+        queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, {
             countsTowardsMoveCount: true
         });
     }
@@ -538,8 +563,17 @@ function projectVectorToScreen(vector) {
     return result.normalize();
 }
 
-function queueMove(axis, index, dir, speed, options = {}) {
-    const { isSolving = false, countsTowardsMoveCount = false, isShuffle = false } = options;
+function queueMove(axis, index, dir, speedOrOptions = null, options = {}) {
+    let speed = null;
+    let moveOptions = options;
+
+    if (typeof speedOrOptions === 'number') {
+        speed = speedOrOptions;
+    } else if (typeof speedOrOptions === 'object' && speedOrOptions !== null) {
+        moveOptions = speedOrOptions;
+    }
+
+    const { isSolving = false, countsTowardsMoveCount = false, isShuffle = false } = moveOptions;
     if (countsTowardsMoveCount) {
         startTimerIfNeeded();
     }
@@ -579,7 +613,7 @@ function recordMoveInHistory(move) {
 
 function animateMove(move) {
     const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
-    const duration = speed || 300;
+    const duration = typeof speed === 'number' ? speed : moveDuration;
     const token = ++animationToken;
     clearHoverHighlight();
     isAnimating = true;
@@ -743,7 +777,7 @@ function startShuffle() {
         const axis = axes[Math.floor(Math.random() * axes.length)];
         const index = indices[Math.floor(Math.random() * indices.length)];
         const dir = dirs[Math.floor(Math.random() * dirs.length)];
-        queueMove(axis, index, dir, ANIMATION_SPEED_SHUFFLE, { isShuffle: true });
+        queueMove(axis, index, dir, { isShuffle: true });
     }
 
     const solveBtn = document.getElementById('btn-solve');
@@ -789,7 +823,7 @@ function startSolve() {
     updateStatus('Status: Solving…');
 
     inverseMoves.forEach(move => {
-        queueMove(move.axis, move.index, move.dir, ANIMATION_SPEED_SOLVE, { isSolving: true });
+        queueMove(move.axis, move.index, move.dir, { isSolving: true });
     });
 
     moveHistory = [];
@@ -827,7 +861,7 @@ function onKeyDown(event) {
     if (dragVector && hoveredCubie && hoveredFaceNormal) {
         const moveFromHover = deriveMoveFromGesture(hoveredFaceNormal, hoveredCubie, dragVector);
         if (moveFromHover) {
-            queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
+            queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, {
                 countsTowardsMoveCount: true
             });
         }
@@ -837,7 +871,7 @@ function onKeyDown(event) {
     const move = KEY_MOVES[key];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
-    queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    queueMove(move.axis, move.index, dir, { countsTowardsMoveCount: true });
 }
 
 function onHintRequest() {
