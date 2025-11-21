@@ -9,6 +9,7 @@ An elegant Rubik's cube playground that pairs a premium liquid-glass HUD with si
 - **Hint Button (`Подсказка`)** – highlights the exact layer to turn, flashing an on-cube glow when you're stuck.
 - **Shuffle / Solve** – scramble with randomized moves and instantly unwind via reversible move history.
 - **Keyboard & Pointer Controls** – drag stickers, orbit the camera, or use `R L U D F B` (+ `Shift` for inverse).
+- **Settings Panel** – toggle drag vs gizmo controls, pick animation speed, flip sound on/off, and switch between light or dark themes with session persistence.
 
 ## How to Use
 

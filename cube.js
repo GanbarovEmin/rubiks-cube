@@ -4,7 +4,17 @@ const CUBE_SIZE = 1;
 const SPACING = 0.02;
 const ANIMATION_SPEED_SHUFFLE = 100;
 const ANIMATION_SPEED_SOLVE = 150;
-const ANIMATION_SPEED_MANUAL = 250;
+const MOVE_SPEEDS = {
+    slow: 420,
+    normal: 250,
+    fast: 140
+};
+const LOCAL_STORAGE_KEYS = {
+    controlMode: 'rubiks_controlMode_v1',
+    moveSpeed: 'rubiks_moveSpeed_v1',
+    soundEnabled: 'rubiks_sound_v1',
+    theme: 'rubiks_theme_v1'
+};
 const SHUFFLE_MOVE_RANGES = {
     easy: [10, 15],
     medium: [20, 25],
@@ -21,6 +31,9 @@ const COLORS = [
 ];
 const COLOR_BLACK = 0x222222;
 
+const DEFAULT_CAMERA_POSITION = new THREE.Vector3(6, 5, 8);
+const DEFAULT_CAMERA_TARGET = new THREE.Vector3(0, 0, 0);
+
 const KEY_MOVES = {
     r: { axis: 'x', index: 1, dir: 1 },
     l: { axis: 'x', index: -1, dir: -1 },
@@ -28,6 +41,20 @@ const KEY_MOVES = {
     d: { axis: 'y', index: -1, dir: -1 },
     f: { axis: 'z', index: 1, dir: 1 },
     b: { axis: 'z', index: -1, dir: -1 }
+};
+const GIZMO_MOVES = {
+    r: { axis: 'x', index: 1, dir: 1 },
+    "r'": { axis: 'x', index: 1, dir: -1 },
+    l: { axis: 'x', index: -1, dir: -1 },
+    "l'": { axis: 'x', index: -1, dir: 1 },
+    u: { axis: 'y', index: 1, dir: 1 },
+    "u'": { axis: 'y', index: 1, dir: -1 },
+    d: { axis: 'y', index: -1, dir: -1 },
+    "d'": { axis: 'y', index: -1, dir: 1 },
+    f: { axis: 'z', index: 1, dir: 1 },
+    "f'": { axis: 'z', index: 1, dir: -1 },
+    b: { axis: 'z', index: -1, dir: -1 },
+    "b'": { axis: 'z', index: -1, dir: 1 }
 };
 
 const KEYBOARD_DRAG_VECTORS = {
@@ -70,6 +97,12 @@ let hintTimeout = null;
 let shuffleDifficulty = 'medium';
 let pendingShuffleMoves = 0;
 let lastShuffleCount = 0;
+let controlMode = 'drag';
+let moveSpeed = 'normal';
+let moveDuration = MOVE_SPEEDS[moveSpeed];
+let soundEnabled = true;
+let theme = 'light';
+let audioContext = null;
 
 let isTimerRunning = false;
 let timerStartTime = 0;
@@ -86,8 +119,8 @@ function init() {
     scene.background = null;
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(6, 5, 8);
-    camera.lookAt(0, 0, 0);
+    camera.position.copy(DEFAULT_CAMERA_POSITION);
+    camera.lookAt(DEFAULT_CAMERA_TARGET);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -96,6 +129,7 @@ function init() {
     container.appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.copy(DEFAULT_CAMERA_TARGET);
     controls.enablePan = false;
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
@@ -167,6 +201,7 @@ function init() {
     updateStatus('Status: Ready');
     resetMoveCounter();
     resetTimer();
+    initializeSettingsPanel();
     requestAnimationFrame(animate);
 }
 
@@ -225,7 +260,7 @@ function getIntersects(event, element) {
 }
 
 function isPointerInteractionAllowed() {
-    return !isAnimating && moveQueue.length === 0 && !isAutoSolving;
+    return controlMode === 'drag' && !isAnimating && moveQueue.length === 0 && !isAutoSolving;
 }
 
 function clearHoverHighlight() {
@@ -528,7 +563,7 @@ function handleCubeDrag(dx, dy) {
     const moveFromHover = deriveMoveFromGesture(intersectedFaceNormal, intersectedCubie, directionVector);
     if (moveFromHover) {
         dragMoveCommitted = true;
-        queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
+        queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, moveDuration, {
             countsTowardsMoveCount: true
         });
     }
@@ -584,7 +619,7 @@ function recordMoveInHistory(move) {
 }
 
 function animateMove(move) {
-    const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
+    const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false, isSolving = false } = move;
     const duration = speed || 300;
     const token = ++animationToken;
     clearHoverHighlight();
@@ -652,6 +687,9 @@ function animateMove(move) {
 
             if (countsTowardsMoveCount) {
                 incrementMoveCounter();
+            }
+            if (countsTowardsMoveCount || (!isShuffle && !isSolving)) {
+                playMoveSound();
             }
             if (isShuffle && pendingShuffleMoves > 0) {
                 pendingShuffleMoves -= 1;
@@ -812,6 +850,200 @@ function startSolve() {
     updateHintAvailability();
 }
 
+function initializeSettingsPanel() {
+    loadSettingsFromStorage();
+    applyTheme(theme, { persist: false });
+    applyMoveSpeed(moveSpeed, { persist: false });
+    applySoundSetting(soundEnabled, { persist: false });
+    applyControlMode(controlMode, { persist: false });
+    syncSettingsControls();
+
+    const toggle = document.getElementById('settings-toggle');
+    const backdrop = document.getElementById('settings-backdrop');
+    const closeBtn = document.getElementById('settings-close');
+    const panel = document.getElementById('settings-panel');
+
+    if (toggle) toggle.addEventListener('click', () => toggleSettingsPanel());
+    if (backdrop) backdrop.addEventListener('click', () => closeSettingsPanel());
+    if (closeBtn) closeBtn.addEventListener('click', () => closeSettingsPanel());
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeSettingsPanel();
+    });
+
+    const controlSelect = document.getElementById('control-mode-select');
+    if (controlSelect) {
+        controlSelect.addEventListener('change', event => {
+            applyControlMode(event.target.value);
+        });
+    }
+
+    const speedSelect = document.getElementById('speed-select');
+    if (speedSelect) {
+        speedSelect.addEventListener('change', event => {
+            applyMoveSpeed(event.target.value);
+        });
+    }
+
+    const soundToggle = document.getElementById('sound-toggle');
+    if (soundToggle) {
+        soundToggle.addEventListener('change', event => {
+            applySoundSetting(event.target.checked);
+        });
+    }
+
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) {
+        themeSelect.addEventListener('change', event => {
+            applyTheme(event.target.value);
+        });
+    }
+
+    if (panel) {
+        panel.addEventListener('click', event => {
+            event.stopPropagation();
+        });
+    }
+
+    const gizmoButtons = document.querySelectorAll('#gizmo-controls button');
+    gizmoButtons.forEach(button => {
+        button.addEventListener('click', handleGizmoButtonClick);
+    });
+}
+
+function handleGizmoButtonClick(event) {
+    if (controlMode !== 'gizmo') return;
+    const moveKey = event.currentTarget?.dataset?.move;
+    const move = GIZMO_MOVES[moveKey];
+    if (!move) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
+    queueMove(move.axis, move.index, move.dir, moveDuration, { countsTowardsMoveCount: true });
+}
+
+function toggleSettingsPanel() {
+    const panel = document.getElementById('settings-panel');
+    if (!panel) return;
+    if (panel.classList.contains('hidden')) {
+        openSettingsPanel();
+    } else {
+        closeSettingsPanel();
+    }
+}
+
+function openSettingsPanel() {
+    const panel = document.getElementById('settings-panel');
+    const backdrop = document.getElementById('settings-backdrop');
+    if (panel) panel.classList.remove('hidden');
+    if (backdrop) backdrop.classList.remove('hidden');
+}
+
+function closeSettingsPanel() {
+    const panel = document.getElementById('settings-panel');
+    const backdrop = document.getElementById('settings-backdrop');
+    if (panel) panel.classList.add('hidden');
+    if (backdrop) backdrop.classList.add('hidden');
+}
+
+function syncSettingsControls() {
+    const controlSelect = document.getElementById('control-mode-select');
+    if (controlSelect) controlSelect.value = controlMode;
+    const speedSelect = document.getElementById('speed-select');
+    if (speedSelect) speedSelect.value = moveSpeed;
+    const soundToggle = document.getElementById('sound-toggle');
+    if (soundToggle) soundToggle.checked = soundEnabled;
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) themeSelect.value = theme;
+}
+
+function applyControlMode(mode, { persist = true } = {}) {
+    controlMode = mode === 'gizmo' ? 'gizmo' : 'drag';
+    if (persist) persistSetting(LOCAL_STORAGE_KEYS.controlMode, controlMode);
+    toggleGizmoControls(controlMode === 'gizmo');
+    if (controlMode === 'gizmo') {
+        clearHoverHighlight();
+        resetDragState();
+    }
+    syncSettingsControls();
+}
+
+function applyMoveSpeed(speed, { persist = true } = {}) {
+    moveSpeed = MOVE_SPEEDS[speed] ? speed : 'normal';
+    moveDuration = MOVE_SPEEDS[moveSpeed];
+    if (persist) persistSetting(LOCAL_STORAGE_KEYS.moveSpeed, moveSpeed);
+    syncSettingsControls();
+}
+
+function applySoundSetting(enabled, { persist = true } = {}) {
+    soundEnabled = Boolean(enabled);
+    if (persist) persistSetting(LOCAL_STORAGE_KEYS.soundEnabled, soundEnabled);
+    syncSettingsControls();
+}
+
+function applyTheme(nextTheme, { persist = true } = {}) {
+    theme = nextTheme === 'dark' ? 'dark' : 'light';
+    document.body.classList.toggle('theme-dark', theme === 'dark');
+    if (persist) persistSetting(LOCAL_STORAGE_KEYS.theme, theme);
+    syncSettingsControls();
+}
+
+function toggleGizmoControls(show) {
+    const gizmoPanel = document.getElementById('gizmo-controls');
+    if (!gizmoPanel) return;
+    gizmoPanel.classList.toggle('hidden', !show);
+}
+
+function persistSetting(key, value) {
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(key, value);
+        }
+    } catch (err) {
+        console.warn('Could not persist setting', key, err);
+    }
+}
+
+function loadSettingsFromStorage() {
+    try {
+        if (typeof localStorage === 'undefined') return;
+        const storedControlMode = localStorage.getItem(LOCAL_STORAGE_KEYS.controlMode);
+        if (storedControlMode === 'drag' || storedControlMode === 'gizmo') controlMode = storedControlMode;
+        const storedSpeed = localStorage.getItem(LOCAL_STORAGE_KEYS.moveSpeed);
+        if (storedSpeed && MOVE_SPEEDS[storedSpeed]) moveSpeed = storedSpeed;
+        moveDuration = MOVE_SPEEDS[moveSpeed];
+        const storedSound = localStorage.getItem(LOCAL_STORAGE_KEYS.soundEnabled);
+        if (storedSound !== null) soundEnabled = storedSound === 'true';
+        const storedTheme = localStorage.getItem(LOCAL_STORAGE_KEYS.theme);
+        if (storedTheme === 'light' || storedTheme === 'dark') theme = storedTheme;
+    } catch (err) {
+        console.warn('Could not load settings from storage', err);
+    }
+}
+
+function getAudioContext() {
+    if (!audioContext) {
+        const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+        audioContext = AudioContextConstructor ? new AudioContextConstructor() : null;
+    }
+    return audioContext;
+}
+
+function playMoveSound() {
+    if (!soundEnabled) return;
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(520, ctx.currentTime);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.18);
+}
+
 function onPlayAgain() {
     hideVictoryUI();
     wasSolved = false;
@@ -833,20 +1065,48 @@ function animate() {
     renderer.render(scene, camera);
 }
 
+function shouldIgnoreKeyboardEvent(event) {
+    const target = event.target;
+    const tagName = target?.tagName?.toLowerCase();
+    return tagName === 'input' || tagName === 'textarea' || target?.isContentEditable;
+}
+
+function resetCameraView() {
+    camera.position.copy(DEFAULT_CAMERA_POSITION);
+    controls.target.copy(DEFAULT_CAMERA_TARGET);
+    camera.lookAt(DEFAULT_CAMERA_TARGET);
+    controls.update();
+}
+
 function onKeyDown(event) {
+    if (shouldIgnoreKeyboardEvent(event)) return;
+    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
+
     const key = event.key.toLowerCase();
-    if (key === 'c') {
-        resetCameraView();
+
+    if (key === ' ' || event.code === 'Space') {
+        event.preventDefault();
+        startShuffle();
         return;
     }
 
-    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
+    if (key === 'enter') {
+        event.preventDefault();
+        startSolve();
+        return;
+    }
+
+    if (key === 'c') {
+        event.preventDefault();
+        resetCameraView();
+        return;
+    }
 
     const dragVector = KEYBOARD_DRAG_VECTORS[key];
     if (dragVector && hoveredCubie && hoveredFaceNormal) {
         const moveFromHover = deriveMoveFromGesture(hoveredFaceNormal, hoveredCubie, dragVector);
         if (moveFromHover) {
-            queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
+            queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, moveDuration, {
                 countsTowardsMoveCount: true
             });
         }
@@ -856,7 +1116,7 @@ function onKeyDown(event) {
     const move = KEY_MOVES[key];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
-    queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    queueMove(move.axis, move.index, dir, moveDuration, { countsTowardsMoveCount: true });
 }
 
 function onHintRequest() {
