@@ -10,6 +10,7 @@ An elegant Rubik's cube playground that pairs a premium liquid-glass HUD with si
 - **Shuffle / Solve** – scramble with randomized moves and instantly unwind via reversible move history.
 - **Speed Presets** – toggle Slow / Normal / Fast to pick your preferred animation tempo.
 - **Keyboard & Pointer Controls** – drag stickers, orbit the camera, or use `R L U D F B` (+ `Shift` for inverse).
+- **Settings Panel** – toggle drag vs gizmo controls, pick animation speed, flip sound on/off, and switch between light or dark themes with session persistence.
 
 ## How to Use
 
