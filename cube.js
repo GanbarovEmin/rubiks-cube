@@ -126,6 +126,17 @@ function init() {
         });
     }
 
+    const difficultySelect = document.getElementById('shuffle-difficulty');
+    if (difficultySelect) {
+        shuffleDifficulty = getCurrentShuffleDifficulty();
+        updateShuffleRangeHint(shuffleDifficulty);
+        difficultySelect.addEventListener('change', event => {
+            shuffleDifficulty = event.target.value;
+            updateShuffleRangeHint(shuffleDifficulty);
+            updateStatus(`Status: Difficulty set to ${formatDifficultyLabel(shuffleDifficulty)}`);
+        });
+    }
+
     const canvas = renderer.domElement;
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('mousemove', onMouseMove);
