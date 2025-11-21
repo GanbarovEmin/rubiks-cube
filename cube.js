@@ -564,11 +564,11 @@ function projectVectorToScreen(vector) {
 }
 
 function queueMove(axis, index, dir, speedOrOptions = null, options = {}) {
-    let speed = null;
     let moveOptions = options;
+    let duration = moveDuration;
 
     if (typeof speedOrOptions === 'number') {
-        speed = speedOrOptions;
+        duration = speedOrOptions;
     } else if (typeof speedOrOptions === 'object' && speedOrOptions !== null) {
         moveOptions = speedOrOptions;
     }
@@ -577,7 +577,7 @@ function queueMove(axis, index, dir, speedOrOptions = null, options = {}) {
     if (countsTowardsMoveCount) {
         startTimerIfNeeded();
     }
-    moveQueue.push({ axis, index, dir, speed, isSolving, countsTowardsMoveCount, isShuffle });
+    moveQueue.push({ axis, index, dir, duration, isSolving, countsTowardsMoveCount, isShuffle });
     processQueue();
 }
 
@@ -612,8 +612,7 @@ function recordMoveInHistory(move) {
 }
 
 function animateMove(move) {
-    const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
-    const duration = typeof speed === 'number' ? speed : moveDuration;
+    const { axis, index, dir, duration, countsTowardsMoveCount, isShuffle = false } = move;
     const token = ++animationToken;
     clearHoverHighlight();
     isAnimating = true;

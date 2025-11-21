@@ -39,6 +39,11 @@ test('Move speed presets map to the expected durations', () => {
   assert.match(cubeSource, /fast: 150/);
 });
 
+test('Move queue stores a resolved duration for each entry', () => {
+  assert.match(cubeSource, /moveQueue.push\({ axis, index, dir, duration,/);
+  assert.match(cubeSource, /const { axis, index, dir, duration,/);
+});
+
 test('Hint workflow is surfaced in the UI copy and controls', () => {
   assert.match(html, /btn-hint/);
   assert.match(html, /Подсказка/);
