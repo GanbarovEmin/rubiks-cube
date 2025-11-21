@@ -42,6 +42,12 @@ let moveHistory = [];
 let moveCount = 0;
 let hintOverlay = null;
 let hintTimeout = null;
+let shuffleDifficulty = 'medium';
+const SHUFFLE_MOVE_RANGES = {
+    easy: [10, 15],
+    medium: [20, 25],
+    hard: [40, 45]
+};
 
 let isTimerRunning = false;
 let timerStartTime = 0;
@@ -99,6 +105,17 @@ function init() {
     document.getElementById('btn-solve').addEventListener('click', startSolve);
     const hintButton = document.getElementById('btn-hint');
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
+
+    const difficultySelect = document.getElementById('shuffle-difficulty');
+    if (difficultySelect) {
+        shuffleDifficulty = getCurrentShuffleDifficulty();
+        updateShuffleRangeHint(shuffleDifficulty);
+        difficultySelect.addEventListener('change', event => {
+            shuffleDifficulty = event.target.value;
+            updateShuffleRangeHint(shuffleDifficulty);
+            updateStatus(`Status: Difficulty set to ${formatDifficultyLabel(shuffleDifficulty)}`);
+        });
+    }
 
     const canvas = renderer.domElement;
     canvas.addEventListener('mousedown', onMouseDown);
@@ -376,13 +393,20 @@ function animateMove(move) {
 }
 
 function startShuffle() {
-    if (isAnimating) return;
+    if (isAnimating || moveQueue.length > 0) return;
+    moveQueue = [];
+    moveHistory = [];
+    clearHintOverlay();
     resetMoveCounter();
     resetTimer();
     const axes = ['x', 'y', 'z'];
     const indices = [-1, 0, 1];
     const dirs = [1, -1];
-    const moves = 20;
+    const difficulty = getCurrentShuffleDifficulty();
+    updateShuffleRangeHint(difficulty);
+    const moves = getShuffleMoveCount(difficulty);
+
+    updateStatus(`Status: Shuffling (${formatDifficultyLabel(difficulty)} • ${moves} moves)`);
 
     for (let i = 0; i < moves; i++) {
         const axis = axes[Math.floor(Math.random() * axes.length)];
@@ -394,6 +418,39 @@ function startShuffle() {
     const solveBtn = document.getElementById('btn-solve');
     if (solveBtn) solveBtn.disabled = false;
     updateHintAvailability();
+}
+
+function getShuffleMoveCount(difficulty) {
+    const [min, max] = getShuffleMoveRange(difficulty);
+    return randomInt(min, max);
+}
+
+function getCurrentShuffleDifficulty() {
+    const difficultySelect = document.getElementById('shuffle-difficulty');
+    if (difficultySelect) {
+        shuffleDifficulty = difficultySelect.value;
+    }
+    return shuffleDifficulty;
+}
+
+function getShuffleMoveRange(difficulty) {
+    const key = difficulty || shuffleDifficulty;
+    return SHUFFLE_MOVE_RANGES[key] || SHUFFLE_MOVE_RANGES.medium;
+}
+
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function formatDifficultyLabel(difficulty) {
+    return `${difficulty.charAt(0).toUpperCase()}${difficulty.slice(1).toLowerCase()}`;
+}
+
+function updateShuffleRangeHint(difficulty) {
+    const hint = document.getElementById('shuffle-range-hint');
+    if (!hint) return;
+    const [min, max] = getShuffleMoveRange(difficulty);
+    hint.textContent = `${min}–${max} moves`;
 }
 
 function startSolve() {
