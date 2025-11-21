@@ -42,7 +42,10 @@ let isDraggingCube = false;
 let startMousePos = { x: 0, y: 0 };
 let intersectedCubie = null;
 let intersectedFaceNormal = null;
-const dragThreshold = 10;
+const dragThreshold = 30;
+
+let hoveredMaterial = null;
+let hoveredEmissive = null;
 
 let moveQueue = [];
 let moveHistory = [];
@@ -130,7 +133,7 @@ function init() {
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('mouseup', onMouseUp);
-    canvas.addEventListener('mouseleave', onMouseUp);
+    canvas.addEventListener('mouseleave', onMouseLeave);
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     canvas.addEventListener('touchend', onMouseUp);
@@ -198,8 +201,46 @@ function getIntersects(event, element) {
     return raycaster.intersectObjects(allCubies);
 }
 
+function isPointerInteractionAllowed() {
+    return !isAnimating && moveQueue.length === 0 && !isAutoSolving;
+}
+
+function clearHoverHighlight() {
+    if (hoveredMaterial && hoveredEmissive) {
+        hoveredMaterial.emissive.copy(hoveredEmissive);
+        hoveredMaterial.emissiveIntensity = 1;
+    }
+    hoveredMaterial = null;
+    hoveredEmissive = null;
+}
+
+function updateHoverHighlight(event) {
+    const intersects = getIntersects(event, renderer.domElement);
+    if (!intersects.length) {
+        clearHoverHighlight();
+        return;
+    }
+
+    const { object, face } = intersects[0];
+    const materialIndex = face?.materialIndex ?? Math.floor((face?.faceIndex ?? 0) / 2);
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    const material = materials[materialIndex];
+
+    if (!material || material === hoveredMaterial) return;
+    if (material.color.getHex() === COLOR_BLACK) {
+        clearHoverHighlight();
+        return;
+    }
+
+    clearHoverHighlight();
+    hoveredMaterial = material;
+    hoveredEmissive = material.emissive.clone();
+    material.emissive.setHex(0x222222);
+    material.emissiveIntensity = 0.6;
+}
+
 function onMouseDown(event) {
-    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
+    if (!isPointerInteractionAllowed()) return;
     const intersects = getIntersects(event, renderer.domElement);
     if (!intersects.length) return;
 
@@ -220,18 +261,26 @@ function onTouchStart(event) {
 }
 
 function onMouseMove(event) {
-    if (!isDraggingCube || !intersectedCubie) return;
-
-    const clientX = event.clientX ?? (event.touches && event.touches[0].clientX);
-    const clientY = event.clientY ?? (event.touches && event.touches[0].clientY);
-
-    const dx = clientX - startMousePos.x;
-    const dy = clientY - startMousePos.y;
-
-    if (Math.sqrt(dx * dx + dy * dy) > dragThreshold) {
-        handleCubeDrag(dx, dy);
-        resetDragState();
+    if (!isPointerInteractionAllowed()) {
+        clearHoverHighlight();
+        return;
     }
+
+    if (isDraggingCube && intersectedCubie) {
+        const clientX = event.clientX ?? (event.touches && event.touches[0].clientX);
+        const clientY = event.clientY ?? (event.touches && event.touches[0].clientY);
+
+        const dx = clientX - startMousePos.x;
+        const dy = clientY - startMousePos.y;
+
+        if (Math.sqrt(dx * dx + dy * dy) > dragThreshold) {
+            handleCubeDrag(dx, dy);
+            resetDragState();
+        }
+        return;
+    }
+
+    updateHoverHighlight(event);
 }
 
 function onTouchMove(event) {
@@ -239,7 +288,18 @@ function onTouchMove(event) {
     onMouseMove(event);
 }
 
-function onMouseUp() {
+function onMouseUp(event) {
+    resetDragState();
+    if (!event) return;
+    if (isPointerInteractionAllowed()) {
+        updateHoverHighlight(event);
+    } else {
+        clearHoverHighlight();
+    }
+}
+
+function onMouseLeave() {
+    clearHoverHighlight();
     resetDragState();
 }
 
@@ -346,6 +406,7 @@ function animateMove(move) {
     const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
     const duration = speed || 300;
     const token = ++animationToken;
+    clearHoverHighlight();
     isAnimating = true;
     updateStatus('Status: Moving…');
     updateHintAvailability();
