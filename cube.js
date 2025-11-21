@@ -57,6 +57,10 @@ let hoveredEmissive = null;
 let hoveredCubie = null;
 let hoveredFaceNormal = null;
 
+let controlMode = 'drag';
+let selectedFace = null;
+let gizmoElement = null;
+
 let moveQueue = [];
 let moveHistory = [];
 let moveCount = 0;
@@ -127,6 +131,9 @@ function init() {
     if (hintButton) hintButton.addEventListener('click', onHintRequest);
     const playAgainButton = document.getElementById('btn-play-again');
     if (playAgainButton) playAgainButton.addEventListener('click', onPlayAgain);
+
+    setupControlModeSelector();
+    initGizmoUI();
 
     const difficultySelect = document.getElementById('shuffle-difficulty');
     if (difficultySelect) {
@@ -257,11 +264,121 @@ function updateHoverHighlight(event) {
     material.emissiveIntensity = 0.6;
 }
 
+function setupControlModeSelector() {
+    const controlModeSelect = document.getElementById('control-mode-select');
+    if (!controlModeSelect) return;
+
+    controlModeSelect.value = controlMode;
+    controlModeSelect.addEventListener('change', event => {
+        controlMode = event.target.value;
+        clearSelectedFace();
+        updateStatus(`Status: Control set to ${controlMode === 'drag' ? 'Drag' : 'Gizmo'}`);
+    });
+}
+
+function initGizmoUI() {
+    gizmoElement = document.getElementById('gizmo');
+    if (!gizmoElement) return;
+
+    const buttonMap = {
+        up: new THREE.Vector2(0, 1),
+        down: new THREE.Vector2(0, -1),
+        left: new THREE.Vector2(-1, 0),
+        right: new THREE.Vector2(1, 0)
+    };
+
+    Object.entries(buttonMap).forEach(([direction, vector]) => {
+        const btn = document.getElementById(`gizmo-${direction}`);
+        if (!btn) return;
+        btn.addEventListener('click', () => onGizmoArrowClick(vector));
+    });
+}
+
+function onGizmoArrowClick(directionVector) {
+    if (controlMode !== 'gizmo') return;
+    if (!isPointerInteractionAllowed()) return;
+    if (!selectedFace || !directionVector) return;
+
+    const worldNormal = getSelectedFaceWorldNormal();
+    if (!worldNormal) return;
+
+    const move = deriveMoveFromGesture(worldNormal, selectedFace.cubie, directionVector.clone());
+    if (!move) return;
+
+    queueMove(move.axis, move.index, move.dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+}
+
+function getSelectedFaceWorldNormal() {
+    if (!selectedFace) return null;
+    const quaternion = selectedFace.cubie.getWorldQuaternion(new THREE.Quaternion());
+    return selectedFace.localNormal.clone().applyQuaternion(quaternion).round();
+}
+
+function handleGizmoSelection(intersection) {
+    if (!intersection || controlMode !== 'gizmo') return;
+
+    const localNormal = intersection.face?.normal?.clone();
+    const cubie = intersection.object;
+    if (!localNormal || !cubie) return;
+
+    const materialIndex = intersection.face?.materialIndex ?? Math.floor((intersection.face?.faceIndex ?? 0) / 2);
+    const materials = Array.isArray(cubie.material) ? cubie.material : [cubie.material];
+    const material = materials[materialIndex];
+    if (!material || material.color.getHex() === COLOR_BLACK) {
+        clearSelectedFace();
+        return;
+    }
+
+    selectedFace = { cubie, localNormal };
+    updateGizmoPosition();
+}
+
+function clearSelectedFace() {
+    selectedFace = null;
+    if (gizmoElement) gizmoElement.classList.add('hidden');
+}
+
+function updateGizmoPosition() {
+    if (!gizmoElement) return;
+    if (controlMode !== 'gizmo' || !selectedFace || !isPointerInteractionAllowed()) {
+        gizmoElement.classList.add('hidden');
+        return;
+    }
+
+    const normal = getSelectedFaceWorldNormal();
+    if (!normal) {
+        gizmoElement.classList.add('hidden');
+        return;
+    }
+
+    const faceCenter = selectedFace.cubie
+        .getWorldPosition(new THREE.Vector3())
+        .add(normal.clone().multiplyScalar(CUBE_SIZE / 2 + SPACING));
+
+    const projected = faceCenter.clone().project(camera);
+    const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+
+    gizmoElement.style.left = `${x}px`;
+    gizmoElement.style.top = `${y}px`;
+    gizmoElement.classList.remove('hidden');
+}
+
 function onMouseDown(event) {
     if (!isPointerInteractionAllowed()) return;
     if (event.button !== undefined && event.button !== 0) return;
     const intersects = getIntersects(event, renderer.domElement);
-    if (!intersects.length) return;
+    if (!intersects.length) {
+        if (controlMode === 'gizmo') {
+            clearSelectedFace();
+        }
+        return;
+    }
+
+    if (controlMode === 'gizmo') {
+        handleGizmoSelection(intersects[0]);
+        return;
+    }
 
     controls.enabled = false;
     isDraggingCube = true;
@@ -387,6 +504,7 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
 }
 
 function handleCubeDrag(dx, dy) {
+    if (controlMode !== 'drag') return;
     if (!intersectedFaceNormal || !intersectedCubie || dragMoveCommitted) return;
 
     const absX = Math.abs(dx);
@@ -555,6 +673,7 @@ function resetCubeToSolved() {
     animationToken++;
     isAnimating = false;
     isAutoSolving = false;
+    clearSelectedFace();
     moveQueue = [];
     moveHistory = [];
     clearHintOverlay();
@@ -604,6 +723,7 @@ function startShuffle() {
     moveQueue = [];
     moveHistory = [];
     wasSolved = false;
+    clearSelectedFace();
     hideVictoryUI();
     clearHintOverlay();
     resetMoveCounter();
@@ -658,6 +778,7 @@ function buildInverseSequence(history) {
 
 function startSolve() {
     if (isAnimating || moveQueue.length > 0 || moveHistory.length === 0 || isAutoSolving) return;
+    clearSelectedFace();
 
     const inverseMoves = buildInverseSequence(moveHistory);
     if (inverseMoves.length === 0) return;
@@ -687,12 +808,14 @@ function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    updateGizmoPosition();
 }
 
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
     tickTimer();
+    updateGizmoPosition();
     renderer.render(scene, camera);
 }
 

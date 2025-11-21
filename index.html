@@ -63,6 +63,43 @@
             z-index: 1;
         }
 
+        #gizmo {
+            position: fixed;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        #gizmo.hidden {
+            display: none;
+        }
+
+        .gizmo-row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .gizmo-button {
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 10px 18px rgba(15, 23, 42, 0.12);
+            color: var(--text-primary);
+            font-weight: 800;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+
+        .gizmo-button:hover {
+            background: rgba(255, 255, 255, 0.98);
+            transform: translateY(-1px);
+        }
+
         #canvas-container:active {
             cursor: grabbing;
         }
@@ -308,13 +345,22 @@
     <div id="timer">Time: 00:00</div>
     <div id="instructions">
         <strong>Controls</strong>
-        Drag stickers to turn faces.<br>
+        Drag stickers to turn faces (Drag mode).<br>
+        Select "Gizmo" to rotate via arrows on a chosen face.<br>
         Drag background to orbit camera.<br>
         Keyboard: <span class="pill">R</span><span class="pill">L</span><span class="pill">U</span><span class="pill">D</span><span class="pill">F</span><span class="pill">B</span> (hold Shift for inverse).<br>
         Нажмите «Подсказка», чтобы подсветить следующий ход.
     </div>
 
     <div id="ui-container">
+        <div class="control-group">
+            <label for="control-mode-select">Control Mode</label>
+            <select id="control-mode-select">
+                <option value="drag" selected>Drag</option>
+                <option value="gizmo">Gizmo</option>
+            </select>
+            <span class="helper-text">Switch between drag and gizmo controls</span>
+        </div>
         <div class="control-group">
             <label for="shuffle-difficulty">Shuffle Difficulty</label>
             <select id="shuffle-difficulty">
@@ -342,6 +388,14 @@
     </div>
 
     <div id="canvas-container"></div>
+    <div id="gizmo" class="hidden">
+        <button class="gizmo-button" id="gizmo-up">↑</button>
+        <div class="gizmo-row">
+            <button class="gizmo-button" id="gizmo-left">←</button>
+            <button class="gizmo-button" id="gizmo-right">→</button>
+        </div>
+        <button class="gizmo-button" id="gizmo-down">↓</button>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
