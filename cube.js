@@ -42,7 +42,19 @@ let isDraggingCube = false;
 let startMousePos = { x: 0, y: 0 };
 let intersectedCubie = null;
 let intersectedFaceNormal = null;
-const dragThreshold = 10;
+const dragThreshold = 30;
+
+let hoveredMaterial = null;
+let hoveredEmissive = null;
+let hoveredCubie = null;
+let hoveredFaceNormal = null;
+
+const KEYBOARD_DRAG_VECTORS = {
+    w: new THREE.Vector2(0, 1),
+    a: new THREE.Vector2(-1, 0),
+    s: new THREE.Vector2(0, -1),
+    d: new THREE.Vector2(1, 0)
+};
 
 let moveQueue = [];
 let moveHistory = [];
@@ -130,7 +142,7 @@ function init() {
     canvas.addEventListener('mousedown', onMouseDown);
     canvas.addEventListener('mousemove', onMouseMove);
     canvas.addEventListener('mouseup', onMouseUp);
-    canvas.addEventListener('mouseleave', onMouseUp);
+    canvas.addEventListener('mouseleave', onMouseLeave);
     canvas.addEventListener('touchstart', onTouchStart, { passive: false });
     canvas.addEventListener('touchmove', onTouchMove, { passive: false });
     canvas.addEventListener('touchend', onMouseUp);
@@ -198,8 +210,51 @@ function getIntersects(event, element) {
     return raycaster.intersectObjects(allCubies);
 }
 
+function isPointerInteractionAllowed() {
+    return !isAnimating && moveQueue.length === 0 && !isAutoSolving;
+}
+
+function clearHoverHighlight() {
+    if (hoveredMaterial && hoveredEmissive) {
+        hoveredMaterial.emissive.copy(hoveredEmissive);
+        hoveredMaterial.emissiveIntensity = 1;
+    }
+    hoveredMaterial = null;
+    hoveredEmissive = null;
+    hoveredCubie = null;
+    hoveredFaceNormal = null;
+}
+
+function updateHoverHighlight(event) {
+    const intersects = getIntersects(event, renderer.domElement);
+    if (!intersects.length) {
+        clearHoverHighlight();
+        return;
+    }
+
+    const { object, face } = intersects[0];
+    const materialIndex = face?.materialIndex ?? Math.floor((face?.faceIndex ?? 0) / 2);
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    const material = materials[materialIndex];
+
+    if (!material || material === hoveredMaterial) return;
+    if (material.color.getHex() === COLOR_BLACK) {
+        clearHoverHighlight();
+        return;
+    }
+
+    clearHoverHighlight();
+    hoveredMaterial = material;
+    hoveredEmissive = material.emissive.clone();
+    hoveredCubie = object;
+    hoveredCubie.getWorldQuaternion(tempQuaternion);
+    hoveredFaceNormal = face.normal.clone().applyQuaternion(tempQuaternion).round();
+    material.emissive.setHex(0x222222);
+    material.emissiveIntensity = 0.6;
+}
+
 function onMouseDown(event) {
-    if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
+    if (!isPointerInteractionAllowed()) return;
     const intersects = getIntersects(event, renderer.domElement);
     if (!intersects.length) return;
 
@@ -220,18 +275,26 @@ function onTouchStart(event) {
 }
 
 function onMouseMove(event) {
-    if (!isDraggingCube || !intersectedCubie) return;
-
-    const clientX = event.clientX ?? (event.touches && event.touches[0].clientX);
-    const clientY = event.clientY ?? (event.touches && event.touches[0].clientY);
-
-    const dx = clientX - startMousePos.x;
-    const dy = clientY - startMousePos.y;
-
-    if (Math.sqrt(dx * dx + dy * dy) > dragThreshold) {
-        handleCubeDrag(dx, dy);
-        resetDragState();
+    if (!isPointerInteractionAllowed()) {
+        clearHoverHighlight();
+        return;
     }
+
+    if (isDraggingCube && intersectedCubie) {
+        const clientX = event.clientX ?? (event.touches && event.touches[0].clientX);
+        const clientY = event.clientY ?? (event.touches && event.touches[0].clientY);
+
+        const dx = clientX - startMousePos.x;
+        const dy = clientY - startMousePos.y;
+
+        if (Math.sqrt(dx * dx + dy * dy) > dragThreshold) {
+            handleCubeDrag(dx, dy);
+            resetDragState();
+        }
+        return;
+    }
+
+    updateHoverHighlight(event);
 }
 
 function onTouchMove(event) {
@@ -239,7 +302,18 @@ function onTouchMove(event) {
     onMouseMove(event);
 }
 
-function onMouseUp() {
+function onMouseUp(event) {
+    resetDragState();
+    if (!event) return;
+    if (isPointerInteractionAllowed()) {
+        updateHoverHighlight(event);
+    } else {
+        clearHoverHighlight();
+    }
+}
+
+function onMouseLeave() {
+    clearHoverHighlight();
     resetDragState();
 }
 
@@ -250,47 +324,67 @@ function resetDragState() {
     controls.enabled = true;
 }
 
-function handleCubeDrag(dx, dy) {
-    if (!intersectedFaceNormal || !intersectedCubie) return;
+function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
+    if (!faceNormal || !cubie) return null;
+    if (!moveVector || moveVector.lengthSq() === 0) return null;
 
-    const moveVector = new THREE.Vector2(dx, -dy).normalize();
-    const axes = [
-        new THREE.Vector3(1, 0, 0),
-        new THREE.Vector3(0, 1, 0),
-        new THREE.Vector3(0, 0, 1)
+    const normalizedVector = moveVector.clone().normalize();
+
+    const axisLookup = [
+        { label: 'x', vec: new THREE.Vector3(1, 0, 0) },
+        { label: 'y', vec: new THREE.Vector3(0, 1, 0) },
+        { label: 'z', vec: new THREE.Vector3(0, 0, 1) }
     ];
 
-    let bestAxis = null;
+    let faceAxis = 'x';
+    let maxNormalDot = 0;
+    axisLookup.forEach(({ label, vec }) => {
+        const dot = Math.abs(vec.dot(faceNormal));
+        if (dot > maxNormalDot) {
+            maxNormalDot = dot;
+            faceAxis = label;
+        }
+    });
+
+    const tangentAxes = axisLookup.filter(({ label }) => label !== faceAxis);
+    let bestTangent = null;
     let maxDot = 0;
     let screenDirection = 1;
 
-    axes.forEach(axis => {
-        if (Math.abs(axis.dot(intersectedFaceNormal)) > 0.9) return;
-        const axis2D = projectVectorToScreen(axis);
-        const dot = axis2D.dot(moveVector);
+    tangentAxes.forEach(axis => {
+        const axis2D = projectVectorToScreen(axis.vec);
+        const dot = axis2D.dot(normalizedVector);
         if (Math.abs(dot) > maxDot) {
             maxDot = Math.abs(dot);
-            bestAxis = axis;
+            bestTangent = axis;
             screenDirection = dot > 0 ? 1 : -1;
         }
     });
 
-    if (!bestAxis) return;
-
-    const rotationVector = new THREE.Vector3().crossVectors(intersectedFaceNormal, bestAxis);
-    let rotAxisLabel = '';
-    if (Math.abs(rotationVector.x) > 0.9) rotAxisLabel = 'x';
-    else if (Math.abs(rotationVector.y) > 0.9) rotAxisLabel = 'y';
-    else rotAxisLabel = 'z';
+    if (!bestTangent) return null;
 
     const unit = CUBE_SIZE + SPACING;
-    const localPos = intersectedCubie.position.clone().divideScalar(unit).round();
+    const localPos = cubie.position.clone().divideScalar(unit).round();
+    const faceNormalSign = Math.sign(faceNormal[faceAxis]) || 1;
 
-    let rotDir = rotationVector[rotAxisLabel] > 0 ? 1 : -1;
-    rotDir *= screenDirection;
-    if (rotAxisLabel === 'x') rotDir *= -1;
+    let rotDir = screenDirection * faceNormalSign;
+    if (faceAxis === 'x') {
+        rotDir *= bestTangent.label === 'y' ? 1 : -1;
+    } else if (faceAxis === 'y') {
+        rotDir *= bestTangent.label === 'z' ? 1 : -1;
+    } else {
+        rotDir *= bestTangent.label === 'x' ? 1 : -1;
+    }
 
-    queueMove(rotAxisLabel, localPos[rotAxisLabel], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    return { axis: faceAxis, index: localPos[faceAxis], dir: rotDir };
+}
+
+function handleCubeDrag(dx, dy) {
+    const moveVector = new THREE.Vector2(dx, -dy);
+    const move = deriveMoveFromGesture(intersectedFaceNormal, intersectedCubie, moveVector);
+    if (!move) return;
+
+    queueMove(move.axis, move.index, move.dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
 }
 
 function projectVectorToScreen(vector) {
@@ -346,6 +440,7 @@ function animateMove(move) {
     const { axis, index, dir, speed, countsTowardsMoveCount, isShuffle = false } = move;
     const duration = speed || 300;
     const token = ++animationToken;
+    clearHoverHighlight();
     isAnimating = true;
     updateStatus('Status: Moving…');
     updateHintAvailability();
@@ -580,7 +675,20 @@ function animate() {
 
 function onKeyDown(event) {
     if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
-    const move = KEY_MOVES[event.key.toLowerCase()];
+
+    const key = event.key.toLowerCase();
+    const dragVector = KEYBOARD_DRAG_VECTORS[key];
+    if (dragVector && hoveredCubie && hoveredFaceNormal) {
+        const moveFromHover = deriveMoveFromGesture(hoveredFaceNormal, hoveredCubie, dragVector);
+        if (moveFromHover) {
+            queueMove(moveFromHover.axis, moveFromHover.index, moveFromHover.dir, ANIMATION_SPEED_MANUAL, {
+                countsTowardsMoveCount: true
+            });
+        }
+        return;
+    }
+
+    const move = KEY_MOVES[key];
     if (!move) return;
     const dir = event.shiftKey ? -move.dir : move.dir;
     queueMove(move.axis, move.index, dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
