@@ -46,15 +46,6 @@ const dragThreshold = 30;
 
 let hoveredMaterial = null;
 let hoveredEmissive = null;
-let hoveredCubie = null;
-let hoveredFaceNormal = null;
-
-const KEYBOARD_DRAG_VECTORS = {
-    w: new THREE.Vector2(0, 1),
-    a: new THREE.Vector2(-1, 0),
-    s: new THREE.Vector2(0, -1),
-    d: new THREE.Vector2(1, 0)
-};
 
 let moveQueue = [];
 let moveHistory = [];
@@ -221,8 +212,6 @@ function clearHoverHighlight() {
     }
     hoveredMaterial = null;
     hoveredEmissive = null;
-    hoveredCubie = null;
-    hoveredFaceNormal = null;
 }
 
 function updateHoverHighlight(event) {
@@ -246,9 +235,6 @@ function updateHoverHighlight(event) {
     clearHoverHighlight();
     hoveredMaterial = material;
     hoveredEmissive = material.emissive.clone();
-    hoveredCubie = object;
-    hoveredCubie.getWorldQuaternion(tempQuaternion);
-    hoveredFaceNormal = face.normal.clone().applyQuaternion(tempQuaternion).round();
     material.emissive.setHex(0x222222);
     material.emissiveIntensity = 0.6;
 }
@@ -328,7 +314,9 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
     if (!faceNormal || !cubie) return null;
     if (!moveVector || moveVector.lengthSq() === 0) return null;
 
-    const normalizedVector = moveVector.clone().normalize();
+    const moveVector = new THREE.Vector2(dx, -dy);
+    if (moveVector.lengthSq() === 0) return;
+    moveVector.normalize();
 
     const axisLookup = [
         { label: 'x', vec: new THREE.Vector3(1, 0, 0) },
@@ -339,7 +327,7 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
     let faceAxis = 'x';
     let maxNormalDot = 0;
     axisLookup.forEach(({ label, vec }) => {
-        const dot = Math.abs(vec.dot(faceNormal));
+        const dot = Math.abs(vec.dot(intersectedFaceNormal));
         if (dot > maxNormalDot) {
             maxNormalDot = dot;
             faceAxis = label;
@@ -353,7 +341,7 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
 
     tangentAxes.forEach(axis => {
         const axis2D = projectVectorToScreen(axis.vec);
-        const dot = axis2D.dot(normalizedVector);
+        const dot = axis2D.dot(moveVector);
         if (Math.abs(dot) > maxDot) {
             maxDot = Math.abs(dot);
             bestTangent = axis;
@@ -361,11 +349,11 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
         }
     });
 
-    if (!bestTangent) return null;
+    if (!bestTangent) return;
 
     const unit = CUBE_SIZE + SPACING;
-    const localPos = cubie.position.clone().divideScalar(unit).round();
-    const faceNormalSign = Math.sign(faceNormal[faceAxis]) || 1;
+    const localPos = intersectedCubie.position.clone().divideScalar(unit).round();
+    const faceNormalSign = Math.sign(intersectedFaceNormal[faceAxis]) || 1;
 
     let rotDir = screenDirection * faceNormalSign;
     if (faceAxis === 'x') {
@@ -376,15 +364,7 @@ function deriveMoveFromGesture(faceNormal, cubie, moveVector) {
         rotDir *= bestTangent.label === 'x' ? 1 : -1;
     }
 
-    return { axis: faceAxis, index: localPos[faceAxis], dir: rotDir };
-}
-
-function handleCubeDrag(dx, dy) {
-    const moveVector = new THREE.Vector2(dx, -dy);
-    const move = deriveMoveFromGesture(intersectedFaceNormal, intersectedCubie, moveVector);
-    if (!move) return;
-
-    queueMove(move.axis, move.index, move.dir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
+    queueMove(faceAxis, localPos[faceAxis], rotDir, ANIMATION_SPEED_MANUAL, { countsTowardsMoveCount: true });
 }
 
 function projectVectorToScreen(vector) {
