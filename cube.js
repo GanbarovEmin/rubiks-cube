@@ -31,6 +31,9 @@ const COLORS = [
 ];
 const COLOR_BLACK = 0x222222;
 
+const DEFAULT_CAMERA_POSITION = new THREE.Vector3(6, 5, 8);
+const DEFAULT_CAMERA_TARGET = new THREE.Vector3(0, 0, 0);
+
 const KEY_MOVES = {
     r: { axis: 'x', index: 1, dir: 1 },
     l: { axis: 'x', index: -1, dir: -1 },
@@ -115,8 +118,8 @@ function init() {
     scene.background = null;
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(6, 5, 8);
-    camera.lookAt(0, 0, 0);
+    camera.position.copy(DEFAULT_CAMERA_POSITION);
+    camera.lookAt(DEFAULT_CAMERA_TARGET);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -125,6 +128,7 @@ function init() {
     container.appendChild(renderer.domElement);
 
     controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.copy(DEFAULT_CAMERA_TARGET);
     controls.enablePan = false;
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
@@ -1047,10 +1051,43 @@ function animate() {
     renderer.render(scene, camera);
 }
 
+function shouldIgnoreKeyboardEvent(event) {
+    const target = event.target;
+    const tagName = target?.tagName?.toLowerCase();
+    return tagName === 'input' || tagName === 'textarea' || target?.isContentEditable;
+}
+
+function resetCameraView() {
+    camera.position.copy(DEFAULT_CAMERA_POSITION);
+    controls.target.copy(DEFAULT_CAMERA_TARGET);
+    camera.lookAt(DEFAULT_CAMERA_TARGET);
+    controls.update();
+}
+
 function onKeyDown(event) {
+    if (shouldIgnoreKeyboardEvent(event)) return;
     if (isAnimating || moveQueue.length > 0 || isAutoSolving) return;
 
     const key = event.key.toLowerCase();
+
+    if (key === ' ' || event.code === 'Space') {
+        event.preventDefault();
+        startShuffle();
+        return;
+    }
+
+    if (key === 'enter') {
+        event.preventDefault();
+        startSolve();
+        return;
+    }
+
+    if (key === 'c') {
+        event.preventDefault();
+        resetCameraView();
+        return;
+    }
+
     const dragVector = KEYBOARD_DRAG_VECTORS[key];
     if (dragVector && hoveredCubie && hoveredFaceNormal) {
         const moveFromHover = deriveMoveFromGesture(hoveredFaceNormal, hoveredCubie, dragVector);
